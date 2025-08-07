@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <div class="jumbotron bg-light p-5 rounded">
+            <h1 class="display-4">APS 구축 준비도 진단 시스템</h1>
+            <p class="lead">Advanced Planning & Scheduling 시스템 도입을 위한 기업의 준비도를 종합적으로 평가합니다.</p>
+            <hr class="my-4">
+            <p>4개 핵심 영역, 28개 문항을 통해 현재 상태를 진단하고 개선 방향을 제시합니다.</p>
+            <a class="btn btn-primary btn-lg" href="{{ url_for('companies') }}">평가 시작하기</a>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body text-center">
+                <h5 class="card-title">현행 프로세스</h5>
+                <p class="card-text">생산계획, 스케줄링, 작업지시 등 핵심 프로세스 평가</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body text-center">
+                <h5 class="card-title">데이터 준비도</h5>
+                <p class="card-text">BOM, 공정정보, 실적데이터 등 기준정보 품질 평가</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body text-center">
+                <h5 class="card-title">관련 시스템</h5>
+                <p class="card-text">ERP, MES 등 기존 시스템 현황 및 연동성 평가</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body text-center">
+                <h5 class="card-title">거버넌스</h5>
+                <p class="card-text">조직, 인력, 의사결정체계 등 관리 체계 평가</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

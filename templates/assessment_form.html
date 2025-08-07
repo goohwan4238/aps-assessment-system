@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}APS 준비도 평가 - {{ company[1] }}{% endblock %}
+
+{% block content %}
+<h2>APS 준비도 평가</h2>
+<div class="alert alert-info">
+    <strong>평가 대상:</strong> {{ company[1] }} ({{ company[2] }})
+</div>
+
+<form method="POST" action="{{ url_for('submit_assessment') }}">
+    <input type="hidden" name="company_id" value="{{ company[0] }}">
+    
+    <div class="mb-3">
+        <label for="assessor_name" class="form-label">평가자명 *</label>
+        <input type="text" class="form-control" id="assessor_name" name="assessor_name" required>
+    </div>
+
+    {% for cat_id, category in categories.items() %}
+    <div class="card mb-4">
+        <div class="card-header">
+            <h4>{{ category.name }} (가중치: {{ (category.weight * 100)|int }}%)</h4>
+            <p class="mb-0 text-muted">{{ category.description }}</p>
+        </div>
+        <div class="card-body">
+            {% for question in category.questions %}
+            <div class="mb-4 p-3 border rounded">
+                <h6>{{ question.code }} {{ question.title }}</h6>
+                <p class="text-muted">{{ question.description }}</p>
+                
+                {% for option in options[question.id] %}
+                <div class="form-check mb-2">
+                    <input class="form-check-input" type="radio" 
+                           name="question_{{ question.id }}" 
+                           id="q{{ question.id }}_{{ option.score }}" 
+                           value="{{ option.score }}" required>
+                    <label class="form-check-label" for="q{{ question.id }}_{{ option.score }}">
+                        <strong>{{ option.score }}점:</strong> {{ option.description }}
+                    </label>
+                </div>
+                {% endfor %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endfor %}
+
+    <div class="mb-3">
+        <label for="notes" class="form-label">추가 메모</label>
+        <textarea class="form-control" id="notes" name="notes" rows="3" 
+                  placeholder="평가 과정에서 특이사항이나 추가 의견을 기록하세요."></textarea>
+    </div>
+
+    <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary btn-lg">평가 완료</button>
+        <a href="{{ url_for('companies') }}" class="btn btn-secondary">취소</a>
+    </div>
+</form>
+{% endblock %}

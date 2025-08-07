@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block title %}카테고리 수정 - APS 준비도 진단{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>카테고리 수정</h2>
+    <a href="{{ url_for('categories') }}" class="btn btn-secondary">카테고리 목록으로</a>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <form method="POST">
+            <div class="mb-3">
+                <label for="name" class="form-label">카테고리명 *</label>
+                <input type="text" class="form-control" id="name" name="name" 
+                       value="{{ category[1] }}" required>
+            </div>
+
+            <div class="mb-3">
+                <label for="weight" class="form-label">가중치 *</label>
+                <div class="input-group">
+                    <input type="number" class="form-control" id="weight" name="weight" 
+                           value="{{ category[2] }}" step="0.01" min="0" max="1" required>
+                    <span class="input-group-text">{{ (category[2] * 100)|int }}%</span>
+                </div>
+                <div class="form-text">0.01 ~ 1.00 사이의 값 (예: 0.35 = 35%)</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="description" class="form-label">설명</label>
+                <textarea class="form-control" id="description" name="description" rows="3">{{ category[3] }}</textarea>
+            </div>
+
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-primary">수정 완료</button>
+                <a href="{{ url_for('categories') }}" class="btn btn-secondary">취소</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+// 가중치 입력 시 퍼센트 실시간 업데이트
+document.getElementById('weight').addEventListener('input', function() {
+    const weight = parseFloat(this.value) || 0;
+    const percentage = Math.round(weight * 100);
+    document.querySelector('.input-group-text').textContent = percentage + '%';
+});
+</script>
+{% endblock %}

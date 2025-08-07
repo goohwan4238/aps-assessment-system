@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block title %}새 문항 추가 - APS 준비도 진단{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>새 문항 추가</h2>
+    <a href="{{ url_for('questions') }}" class="btn btn-secondary">문항 목록으로</a>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <form method="POST">
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label for="category_id" class="form-label">카테고리 *</label>
+                        <select class="form-control" id="category_id" name="category_id" required>
+                            <option value="">카테고리를 선택하세요</option>
+                            {% for category in categories %}
+                            <option value="{{ category[0] }}">{{ category[1] }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label for="code" class="form-label">문항 코드 *</label>
+                        <input type="text" class="form-control" id="code" name="code" 
+                               placeholder="예: 1.1.4" required>
+                        <div class="form-text">고유한 코드를 입력하세요</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label for="title" class="form-label">문항 제목 *</label>
+                <input type="text" class="form-control" id="title" name="title" 
+                       placeholder="평가할 항목의 제목을 입력하세요" required>
+            </div>
+
+            <div class="mb-3">
+                <label for="description" class="form-label">문항 설명</label>
+                <textarea class="form-control" id="description" name="description" rows="2"
+                          placeholder="문항에 대한 자세한 설명을 입력하세요"></textarea>
+            </div>
+
+            <hr class="my-4">
+            <h5>선택지 설정</h5>
+            <p class="text-muted">각 점수별 선택지 설명을 입력하세요.</p>
+
+            {% for score in range(1, 6) %}
+            <div class="mb-3">
+                <label for="option_{{ score }}" class="form-label">
+                    <strong>{{ score }}점</strong>
+                </label>
+                <input type="text" class="form-control" id="option_{{ score }}" 
+                       name="option_{{ score }}" 
+                       placeholder="Level {{ score }} - {{ ['기본', '관리', '정의', '최적화', '혁신'][score-1] }} 수준에 대한 설명" 
+                       required>
+            </div>
+            {% endfor %}
+
+            <div class="d-flex gap-2 mt-4">
+                <button type="submit" class="btn btn-primary">문항 추가</button>
+                <a href="{{ url_for('questions') }}" class="btn btn-secondary">취소</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

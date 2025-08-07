@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}평가 이력 - APS 준비도 진단{% endblock %}
+
+{% block content %}
+<h2>평가 이력</h2>
+
+<div class="card">
+    <div class="card-body">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>회사명</th>
+                    <th>평가자</th>
+                    <th>평가일</th>
+                    <th>총점</th>
+                    <th>성숙도</th>
+                    <th>작업</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for assessment in assessments %}
+                <tr>
+                    <td>{{ assessment[1] }}</td>
+                    <td>{{ assessment[2] }}</td>
+                    <td>{{ assessment[3][:16] }}</td>
+                    <td>{{ assessment[4] }}/140</td>
+                    <td>
+                        <span class="maturity-level level-{{ assessment[5] }}">
+                            Level {{ assessment[5] }}
+                        </span>
+                    </td>
+                    <td>
+                        <a href="{{ url_for('assessment_detail', assessment_id=assessment[0]) }}" 
+                           class="btn btn-sm btn-primary">상세보기</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

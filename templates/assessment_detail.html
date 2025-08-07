@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+
+{% block title %}평가 결과 - {{ assessment[8] }}{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <h2>평가 결과 상세</h2>
+        
+        <div class="card mb-4">
+            <div class="card-header">
+                <h4>기본 정보</h4>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <p><strong>회사명:</strong> {{ assessment[8] }}</p>
+                        <p><strong>평가자:</strong> {{ assessment[2] }}</p>
+                        <p><strong>평가일:</strong> {{ assessment[3][:16] }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <p><strong>총점:</strong> {{ assessment[4] }}/140점</p>
+                        <div class="maturity-level level-{{ assessment[5] }}">
+                            성숙도 Level {{ assessment[5] }}
+                        </div>
+                    </div>
+                </div>
+                {% if assessment[6] %}
+                <div class="mt-3">
+                    <strong>메모:</strong>
+                    <p class="text-muted">{{ assessment[6] }}</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header">
+                <h4>영역별 점수</h4>
+            </div>
+            <div class="card-body">
+                {% for category in category_scores %}
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between">
+                        <span><strong>{{ category[1] }}</strong></span>
+                        <span>{{ category[3] }}/{{ category[4] }}점 ({{ "%.1f"|format((category[3]/category[4])*100) }}%)</span>
+                    </div>
+                    <div class="progress">
+                        <div class="progress-bar" style="width: {{ (category[3]/category[4])*100 }}%"></div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h4>상세 응답</h4>
+            </div>
+            <div class="card-body">
+                {% for result in detailed_results %}
+                <div class="mb-2">
+                    <strong>{{ result[0] }}</strong> {{ result[1] }}: 
+                    <span class="badge bg-primary">{{ result[2] }}점</span>
+                    {{ result[3] }}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5>레이더 차트</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="radarChart" width="300" height="300"></canvas>
+            </div>
+        </div>
+        
+        <div class="card mt-3">
+            <div class="card-header">
+                <h5>성숙도 가이드</h5>
+            </div>
+            <div class="card-body">
+                <div class="maturity-level level-1 mb-2">Level 1: 초기 단계 (28-56점)</div>
+                <div class="maturity-level level-2 mb-2">Level 2: 관리 단계 (57-84점)</div>
+                <div class="maturity-level level-3 mb-2">Level 3: 정의 단계 (85-112점)</div>
+                <div class="maturity-level level-4 mb-2">Level 4: 최적화 단계 (113-128점)</div>
+                <div class="maturity-level level-5">Level 5: 혁신 단계 (129-140점)</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// 레이더 차트 데이터 로드
+fetch('/api/assessment/{{ assessment[0] }}/chart')
+    .then(response => response.json())
+    .then(data => {
+        const ctx = document.getElementById('radarChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'radar',
+            data: {
+                labels: data.categories,
+                datasets: [{
+                    label: '현재 점수',
+                    data: data.percentages,
+                    backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                    borderColor: 'rgb(54, 162, 235)',
+                    pointBackgroundColor: 'rgb(54, 162, 235)',
+                    pointBorderColor: '#fff',
+                    pointHoverBackgroundColor: '#fff',
+                    pointHoverBorderColor: 'rgb(54, 162, 235)'
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    r: {
+                        beginAtZero: true,
+                        max: 100,
+                        ticks: {
+                            stepSize: 20
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                }
+            }
+        });
+    });
+</script>
+{% endblock %}

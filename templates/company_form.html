@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block title %}회사 등록 - APS 준비도 진단{% endblock %}
+
+{% block content %}
+<h2>새 회사 등록</h2>
+
+<div class="card">
+    <div class="card-body">
+        <form method="POST">
+            <div class="mb-3">
+                <label for="name" class="form-label">회사명 *</label>
+                <input type="text" class="form-control" id="name" name="name" required>
+            </div>
+            <div class="mb-3">
+                <label for="industry" class="form-label">업종</label>
+                <select class="form-control" id="industry" name="industry">
+                    <option value="">선택하세요</option>
+                    <option value="자동차">자동차</option>
+                    <option value="전자/전기">전자/전기</option>
+                    <option value="기계/장비">기계/장비</option>
+                    <option value="화학/소재">화학/소재</option>
+                    <option value="식품/음료">식품/음료</option>
+                    <option value="섬유/의류">섬유/의류</option>
+                    <option value="기타">기타</option>
+                </select>
+            </div>
+            <div class="mb-3">
+                <label for="size" class="form-label">규모</label>
+                <select class="form-control" id="size" name="size">
+                    <option value="">선택하세요</option>
+                    <option value="소기업">소기업 (50명 미만)</option>
+                    <option value="중기업">중기업 (50-300명)</option>
+                    <option value="대기업">대기업 (300명 이상)</option>
+                </select>
+            </div>
+            <div class="mb-3">
+                <label for="contact_person" class="form-label">담당자명</label>
+                <input type="text" class="form-control" id="contact_person" name="contact_person">
+            </div>
+            <div class="mb-3">
+                <label for="contact_email" class="form-label">담당자 이메일</label>
+                <input type="email" class="form-control" id="contact_email" name="contact_email">
+            </div>
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-primary">등록</button>
+                <a href="{{ url_for('companies') }}" class="btn btn-secondary">취소</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

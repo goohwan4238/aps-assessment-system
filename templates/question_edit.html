@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+
+{% block title %}문항 수정 - APS 준비도 진단{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>문항 수정</h2>
+    <a href="{{ url_for('questions') }}" class="btn btn-secondary">문항 목록으로</a>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <form method="POST">
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label for="code" class="form-label">문항 코드 *</label>
+                        <input type="text" class="form-control" id="code" name="code" 
+                               value="{{ question[2] }}" required>
+                        <div class="form-text">예: 1.1.1, 2.3.2</div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label for="category" class="form-label">카테고리</label>
+                        <select class="form-control" id="category" disabled>
+                            <option>{{ question[7] }}</option>
+                        </select>
+                        <div class="form-text">카테고리 변경은 별도로 관리됩니다.</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label for="title" class="form-label">문항 제목 *</label>
+                <input type="text" class="form-control" id="title" name="title" 
+                       value="{{ question[3] }}" required>
+            </div>
+
+            <div class="mb-3">
+                <label for="description" class="form-label">문항 설명</label>
+                <textarea class="form-control" id="description" name="description" rows="2">{{ question[4] }}</textarea>
+            </div>
+
+            <hr class="my-4">
+            <h5>선택지 설정</h5>
+            <p class="text-muted">각 점수별 선택지 설명을 입력하세요.</p>
+
+            {% for option in options %}
+            <div class="mb-3">
+                <label for="option_{{ option[0] }}" class="form-label">
+                    <strong>{{ option[0] }}점</strong>
+                </label>
+                <input type="text" class="form-control" id="option_{{ option[0] }}" 
+                       name="option_{{ option[0] }}" value="{{ option[1] }}" required>
+            </div>
+            {% endfor %}
+
+            <div class="d-flex gap-2 mt-4">
+                <button type="submit" class="btn btn-primary">수정 완료</button>
+                <a href="{{ url_for('questions') }}" class="btn btn-secondary">취소</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

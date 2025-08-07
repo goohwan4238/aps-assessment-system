@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}회사 관리 - APS 준비도 진단{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>회사 관리</h2>
+    <a href="{{ url_for('new_company') }}" class="btn btn-primary">새 회사 등록</a>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>회사명</th>
+                    <th>업종</th>
+                    <th>규모</th>
+                    <th>담당자</th>
+                    <th>평가횟수</th>
+                    <th>등록일</th>
+                    <th>작업</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for company in companies %}
+                <tr>
+                    <td>{{ company[1] }}</td>
+                    <td>{{ company[2] }}</td>
+                    <td>{{ company[3] }}</td>
+                    <td>{{ company[4] }}</td>
+                    <td>{{ company[7] }}회</td>
+                    <td>{{ company[6][:10] }}</td>
+                    <td>
+                        <a href="{{ url_for('new_assessment', company_id=company[0]) }}" class="btn btn-sm btn-success">평가하기</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
