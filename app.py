@@ -561,6 +561,49 @@ def edit_category(category_id):
     
     return render_template('category_edit.html', category=category)
 
+@app.route('/category/new', methods=['GET', 'POST'])
+def new_category():
+    if request.method == 'POST':
+        conn = sqlite3.connect('aps_assessment.db')
+        c = conn.cursor()
+        
+        # 새 카테고리의 order_num 계산 (기존 최대값 + 1)
+        c.execute('SELECT COALESCE(MAX(order_num), 0) + 1 FROM categories')
+        new_order_num = c.fetchone()[0]
+        
+        c.execute('''INSERT INTO categories (name, weight, description, order_num)
+                     VALUES (?, ?, ?, ?)''',
+                  (request.form['name'], float(request.form['weight']), 
+                   request.form['description'], new_order_num))
+        conn.commit()
+        conn.close()
+        flash('새 카테고리가 성공적으로 추가되었습니다.')
+        return redirect(url_for('categories'))
+    
+    return render_template('category_new.html')
+
+@app.route('/category/<int:category_id>/delete', methods=['POST'])
+def delete_category(category_id):
+    conn = sqlite3.connect('aps_assessment.db')
+    c = conn.cursor()
+    
+    # 카테고리에 연결된 문항이 있는지 확인
+    c.execute('SELECT COUNT(*) FROM questions WHERE category_id = ?', (category_id,))
+    question_count = c.fetchone()[0]
+    
+    if question_count > 0:
+        flash(f'이 카테고리에는 {question_count}개의 문항이 연결되어 있어 삭제할 수 없습니다. 먼저 연결된 문항들을 삭제하거나 다른 카테고리로 이동해주세요.')
+        conn.close()
+        return redirect(url_for('categories'))
+    
+    # 카테고리 삭제
+    c.execute('DELETE FROM categories WHERE id = ?', (category_id,))
+    conn.commit()
+    conn.close()
+    
+    flash('카테고리가 성공적으로 삭제되었습니다.')
+    return redirect(url_for('categories'))
+
 if __name__ == '__main__':
     print("APS 준비도 진단 시스템을 시작합니다...")
     print("데이터베이스를 초기화합니다...")
