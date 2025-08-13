@@ -91,18 +91,74 @@
                 <div class="maturity-level level-5">Level 5: 혁신 단계 (129-140점)</div>
             </div>
         </div>
+        
+        <div class="card mt-3">
+            <div class="card-body text-center">
+                <small class="text-muted">💡 차트의 영역을 클릭하면 상세 분석을 볼 수 있습니다</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Drill-down 모달 -->
+<div class="modal fade" id="drilldownModal" tabindex="-1" aria-labelledby="drilldownModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="drilldownModalLabel">상세 분석</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h6 id="modalCategoryName" class="mb-0"></h6>
+                    <div>
+                        <button type="button" class="btn btn-sm btn-outline-primary me-2" id="prevCategoryBtn">이전</button>
+                        <button type="button" class="btn btn-sm btn-outline-primary" id="nextCategoryBtn">다음</button>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-8">
+                        <canvas id="drilldownChart" width="400" height="400"></canvas>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card">
+                            <div class="card-header">
+                                <h6>질문별 점수</h6>
+                            </div>
+                            <div class="card-body" id="questionScores">
+                                <!-- 질문별 점수가 동적으로 추가됩니다 -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">닫기</button>
+            </div>
+        </div>
     </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
+let mainChartData = null;
+let mainChart = null;
+let drilldownChart = null;
+let currentCategoryIndex = 0;
+let categoryIds = [];
+
 // 레이더 차트 데이터 로드
 fetch('/api/assessment/{{ assessment[0] }}/chart')
     .then(response => response.json())
     .then(data => {
+        mainChartData = data;
+        
+        // 카테고리 ID 매핑 (순서대로 1, 2, 3, 4)
+        categoryIds = [1, 2, 3, 4];
+        
         const ctx = document.getElementById('radarChart').getContext('2d');
-        new Chart(ctx, {
+        mainChart = new Chart(ctx, {
             type: 'radar',
             data: {
                 labels: data.categories,
@@ -132,9 +188,151 @@ fetch('/api/assessment/{{ assessment[0] }}/chart')
                     legend: {
                         display: false
                     }
+                },
+                onClick: (event, elements) => {
+                    if (elements.length > 0) {
+                        const index = elements[0].index;
+                        currentCategoryIndex = index;
+                        showDrilldown(categoryIds[index], data.categories[index]);
+                    }
                 }
             }
         });
     });
+
+// 드릴다운 모달 표시
+function showDrilldown(categoryId, categoryName) {
+    fetch(`/api/assessment/{{ assessment[0] }}/category/${categoryId}/detail`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                alert('데이터를 불러올 수 없습니다.');
+                return;
+            }
+            
+            // 모달 제목 설정
+            document.getElementById('modalCategoryName').textContent = data.categoryName;
+            
+            // 드릴다운 차트 생성
+            createDrilldownChart(data);
+            
+            // 질문별 점수 표시
+            displayQuestionScores(data);
+            
+            // 모달 표시
+            const modal = new bootstrap.Modal(document.getElementById('drilldownModal'));
+            modal.show();
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('데이터를 불러오는 중 오류가 발생했습니다.');
+        });
+}
+
+// 드릴다운 차트 생성
+function createDrilldownChart(data) {
+    const canvas = document.getElementById('drilldownChart');
+    const ctx = canvas.getContext('2d');
+    
+    // 기존 차트 제거
+    if (drilldownChart) {
+        drilldownChart.destroy();
+    }
+    
+    drilldownChart = new Chart(ctx, {
+        type: 'radar',
+        data: {
+            labels: data.questions.map((q, i) => `Q${i+1}`),
+            datasets: [{
+                label: '점수',
+                data: data.percentages,
+                backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                borderColor: 'rgb(255, 99, 132)',
+                pointBackgroundColor: 'rgb(255, 99, 132)',
+                pointBorderColor: '#fff',
+                pointHoverBackgroundColor: '#fff',
+                pointHoverBorderColor: 'rgb(255, 99, 132)'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                r: {
+                    beginAtZero: true,
+                    max: 100,
+                    ticks: {
+                        stepSize: 20
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    callbacks: {
+                        afterLabel: function(context) {
+                            return data.questions[context.dataIndex];
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+// 질문별 점수 표시
+function displayQuestionScores(data) {
+    const container = document.getElementById('questionScores');
+    container.innerHTML = '';
+    
+    data.questions.forEach((question, index) => {
+        const score = data.scores[index];
+        const percentage = data.percentages[index];
+        
+        const questionDiv = document.createElement('div');
+        questionDiv.className = 'mb-2';
+        questionDiv.innerHTML = `
+            <div class="d-flex justify-content-between">
+                <small><strong>Q${index + 1}</strong></small>
+                <small>${score}/5점 (${percentage}%)</small>
+            </div>
+            <div class="progress progress-sm">
+                <div class="progress-bar" style="width: ${percentage}%"></div>
+            </div>
+            <small class="text-muted">${question}</small>
+        `;
+        container.appendChild(questionDiv);
+    });
+}
+
+// 이전/다음 카테고리 버튼 이벤트
+document.getElementById('prevCategoryBtn').addEventListener('click', () => {
+    currentCategoryIndex = (currentCategoryIndex - 1 + categoryIds.length) % categoryIds.length;
+    showDrilldown(categoryIds[currentCategoryIndex], mainChartData.categories[currentCategoryIndex]);
+});
+
+document.getElementById('nextCategoryBtn').addEventListener('click', () => {
+    currentCategoryIndex = (currentCategoryIndex + 1) % categoryIds.length;
+    showDrilldown(categoryIds[currentCategoryIndex], mainChartData.categories[currentCategoryIndex]);
+});
+
+// 모달 닫힘 이벤트 처리
+document.getElementById('drilldownModal').addEventListener('hidden.bs.modal', function () {
+    // 드릴다운 차트 제거
+    if (drilldownChart) {
+        drilldownChart.destroy();
+        drilldownChart = null;
+    }
+    
+    // backdrop 강제 제거
+    const backdrops = document.querySelectorAll('.modal-backdrop');
+    backdrops.forEach(backdrop => backdrop.remove());
+    
+    // body 클래스 정리
+    document.body.classList.remove('modal-open');
+    document.body.style.paddingRight = '';
+});
 </script>
 {% endblock %}

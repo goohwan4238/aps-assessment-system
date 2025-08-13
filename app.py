@@ -412,6 +412,34 @@ def assessment_chart_data(assessment_id):
     
     return jsonify(chart_data)
 
+@app.route('/api/assessment/<int:assessment_id>/category/<int:category_id>/detail')
+def assessment_category_detail(assessment_id, category_id):
+    conn = sqlite3.connect('aps_assessment.db')
+    c = conn.cursor()
+    
+    c.execute('''SELECT q.title, ar.score, cat.name as category_name
+                 FROM questions q
+                 JOIN assessment_results ar ON q.id = ar.question_id
+                 JOIN categories cat ON q.category_id = cat.id
+                 WHERE ar.assessment_id = ? AND q.category_id = ?
+                 ORDER BY q.order_num''', (assessment_id, category_id))
+    
+    data = c.fetchall()
+    conn.close()
+    
+    if not data:
+        return jsonify({'error': 'No data found'}), 404
+    
+    detail_data = {
+        'categoryName': data[0][2],
+        'questions': [row[0] for row in data],
+        'scores': [row[1] for row in data],
+        'maxScore': 5,
+        'percentages': [row[1] * 20 for row in data]  # Convert 1-5 score to 0-100 percentage
+    }
+    
+    return jsonify(detail_data)
+
 @app.route('/questions')
 def questions():
     conn = sqlite3.connect('aps_assessment.db')
