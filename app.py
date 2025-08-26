@@ -1,9 +1,13 @@
 # app.py
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_file, make_response
 import sqlite3
 import json
 from datetime import datetime
 import os
+from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Font, PatternFill, Alignment
+import io
+import tempfile
 
 app = Flask(__name__)
 app.secret_key = 'your-secret-key-here'
@@ -631,6 +635,192 @@ def delete_category(category_id):
     
     flash('카테고리가 성공적으로 삭제되었습니다.')
     return redirect(url_for('categories'))
+
+@app.route('/questions/export')
+def export_questions():
+    """평가 문항을 Excel 파일로 내보내기"""
+    conn = sqlite3.connect('aps_assessment.db')
+    c = conn.cursor()
+    
+    # 문항과 선택지 데이터 조회
+    c.execute('''SELECT q.id, c.name as category_name, q.code, q.title, q.description,
+                        qo.score, qo.description as option_desc
+                 FROM questions q
+                 JOIN categories c ON q.category_id = c.id
+                 JOIN question_options qo ON q.id = qo.question_id
+                 ORDER BY c.order_num, q.order_num, qo.score''')
+    data = c.fetchall()
+    conn.close()
+    
+    # Excel 워크북 생성
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "평가문항"
+    
+    # 헤더 스타일 설정
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+    header_alignment = Alignment(horizontal="center", vertical="center")
+    
+    # 헤더 작성
+    headers = ["문항ID", "카테고리", "문항코드", "문항제목", "문항설명", "점수1", "점수2", "점수3", "점수4", "점수5"]
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_alignment
+    
+    # 데이터 구조화 (문항별로 그룹화)
+    questions_dict = {}
+    for row in data:
+        q_id = row[0]
+        if q_id not in questions_dict:
+            questions_dict[q_id] = {
+                'id': row[0], 'category': row[1], 'code': row[2], 
+                'title': row[3], 'description': row[4], 'options': {}
+            }
+        questions_dict[q_id]['options'][row[5]] = row[6]
+    
+    # 데이터 행 작성
+    row_num = 2
+    for q_data in questions_dict.values():
+        ws.cell(row=row_num, column=1, value=q_data['id'])
+        ws.cell(row=row_num, column=2, value=q_data['category'])
+        ws.cell(row=row_num, column=3, value=q_data['code'])
+        ws.cell(row=row_num, column=4, value=q_data['title'])
+        ws.cell(row=row_num, column=5, value=q_data['description'])
+        
+        # 선택지 (점수 1-5)
+        for score in range(1, 6):
+            ws.cell(row=row_num, column=5 + score, value=q_data['options'].get(score, ''))
+        
+        row_num += 1
+    
+    # 열 너비 자동 조정
+    for col in ws.columns:
+        max_length = 0
+        column = col[0].column_letter
+        for cell in col:
+            try:
+                if len(str(cell.value)) > max_length:
+                    max_length = len(str(cell.value))
+            except:
+                pass
+        adjusted_width = min(max_length + 2, 50)
+        ws.column_dimensions[column].width = adjusted_width
+    
+    # 메모리에 파일 저장
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    
+    # 파일명 생성
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"평가문항_{timestamp}.xlsx"
+    
+    return send_file(output, 
+                     as_attachment=True, 
+                     download_name=filename, 
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+@app.route('/questions/import', methods=['POST'])
+def import_questions():
+    """Excel 파일에서 평가 문항 가져오기"""
+    if 'file' not in request.files:
+        flash('파일이 선택되지 않았습니다.')
+        return redirect(url_for('questions'))
+    
+    file = request.files['file']
+    if file.filename == '':
+        flash('파일이 선택되지 않았습니다.')
+        return redirect(url_for('questions'))
+    
+    if not file.filename.endswith('.xlsx'):
+        flash('Excel 파일(.xlsx)만 업로드 가능합니다.')
+        return redirect(url_for('questions'))
+    
+    try:
+        # 임시 파일로 저장
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp:
+            file.save(tmp.name)
+            
+            # Excel 파일 읽기
+            wb = load_workbook(tmp.name)
+            ws = wb.active
+            
+            conn = sqlite3.connect('aps_assessment.db')
+            c = conn.cursor()
+            
+            # 카테고리 매핑 생성 (이름 -> ID)
+            c.execute('SELECT id, name FROM categories')
+            category_map = {name: id for id, name in c.fetchall()}
+            
+            updated_count = 0
+            error_rows = []
+            
+            # 데이터 행 처리 (첫 번째 행은 헤더이므로 2번째부터)
+            for row_num in range(2, ws.max_row + 1):
+                try:
+                    # 셀 값 읽기
+                    question_id = ws.cell(row=row_num, column=1).value
+                    category_name = ws.cell(row=row_num, column=2).value
+                    code = ws.cell(row=row_num, column=3).value
+                    title = ws.cell(row=row_num, column=4).value
+                    description = ws.cell(row=row_num, column=5).value
+                    
+                    # 필수 필드 검증
+                    if not all([question_id, category_name, code, title]):
+                        error_rows.append(f"행 {row_num}: 필수 필드 누락")
+                        continue
+                    
+                    # 카테고리 존재 확인
+                    if category_name not in category_map:
+                        error_rows.append(f"행 {row_num}: 존재하지 않는 카테고리 '{category_name}'")
+                        continue
+                    
+                    category_id = category_map[category_name]
+                    
+                    # 문항 업데이트
+                    c.execute('''UPDATE questions SET category_id = ?, code = ?, title = ?, description = ?
+                                 WHERE id = ?''', (category_id, code, title, description or '', question_id))
+                    
+                    if c.rowcount == 0:
+                        error_rows.append(f"행 {row_num}: 문항 ID {question_id}를 찾을 수 없음")
+                        continue
+                    
+                    # 선택지 업데이트 (점수 1-5)
+                    for score in range(1, 6):
+                        option_desc = ws.cell(row=row_num, column=5 + score).value
+                        if option_desc:
+                            c.execute('''UPDATE question_options SET description = ?
+                                         WHERE question_id = ? AND score = ?''',
+                                      (option_desc, question_id, score))
+                    
+                    updated_count += 1
+                    
+                except Exception as e:
+                    error_rows.append(f"행 {row_num}: 처리 오류 - {str(e)}")
+            
+            conn.commit()
+            conn.close()
+            
+            # 임시 파일 삭제
+            os.unlink(tmp.name)
+            
+            # 결과 메시지
+            if updated_count > 0:
+                flash(f'{updated_count}개의 문항이 성공적으로 업데이트되었습니다.')
+            
+            if error_rows:
+                error_msg = "다음 행에서 오류가 발생했습니다:\n" + "\n".join(error_rows[:10])
+                if len(error_rows) > 10:
+                    error_msg += f"\n... 외 {len(error_rows) - 10}개 오류"
+                flash(error_msg)
+            
+    except Exception as e:
+        flash(f'파일 처리 중 오류가 발생했습니다: {str(e)}')
+    
+    return redirect(url_for('questions'))
 
 if __name__ == '__main__':
     print("APS 준비도 진단 시스템을 시작합니다...")
