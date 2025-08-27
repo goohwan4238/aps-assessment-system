@@ -5,7 +5,15 @@
 {% block content %}
 <div class="row">
     <div class="col-md-8">
-        <h2>평가 결과 상세</h2>
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2>평가 결과 상세</h2>
+            <div>
+                <a href="{{ url_for('generate_pdf_report', assessment_id=assessment[0]) }}" 
+                   class="btn btn-danger">
+                    <i class="fas fa-file-pdf"></i> PDF 보고서 다운로드
+                </a>
+            </div>
+        </div>
         
         <div class="card mb-4">
             <div class="card-header">

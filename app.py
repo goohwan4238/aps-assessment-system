@@ -8,9 +8,76 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 import io
 import tempfile
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from pathlib import Path
 
 app = Flask(__name__)
 app.secret_key = 'your-secret-key-here'
+
+# 한글 폰트 등록
+def register_korean_fonts():
+    """한글 폰트를 ReportLab에 등록"""
+    try:
+        # 폰트 파일 경로
+        font_dir = Path('fonts')
+        
+        # Noto Sans KR 폰트 파일 찾기
+        noto_regular = None
+        noto_bold = None
+        
+        # TTF 파일 찾기
+        for font_file in font_dir.glob('*.ttf'):
+            name = font_file.name.lower()
+            if 'regular' in name or ('noto' in name and 'bold' not in name and 'light' not in name):
+                noto_regular = font_file
+            elif 'bold' in name:
+                noto_bold = font_file
+        
+        # OTF 파일 찾기 (TTF가 없을 경우)
+        if not noto_regular:
+            for font_file in font_dir.glob('*.otf'):
+                name = font_file.name.lower()
+                if 'regular' in name or ('noto' in name and 'bold' not in name and 'light' not in name):
+                    noto_regular = font_file
+                elif 'bold' in name:
+                    noto_bold = font_file
+        
+        # 폰트 등록
+        if noto_regular and noto_regular.exists():
+            pdfmetrics.registerFont(TTFont('NotoSansKR', str(noto_regular)))
+            print(f"한글 폰트 등록 성공: {noto_regular}")
+            
+            if noto_bold and noto_bold.exists():
+                pdfmetrics.registerFont(TTFont('NotoSansKR-Bold', str(noto_bold)))
+                print(f"한글 굵은체 폰트 등록 성공: {noto_bold}")
+                return 'NotoSansKR'
+            else:
+                return 'NotoSansKR'
+        else:
+            # DejaVu 폰트 사용 (Alpine Linux 기본 제공)
+            try:
+                # Alpine Linux DejaVu 폰트 경로
+                pdfmetrics.registerFont(TTFont('DejaVuSans', '/usr/share/fonts/dejavu/DejaVuSans.ttf'))
+                pdfmetrics.registerFont(TTFont('DejaVuSans-Bold', '/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf'))
+                print("DejaVu 폰트 등록 성공 (한글 일부 지원)")
+                return 'DejaVuSans'
+            except Exception as e:
+                print("한글 폰트 파일을 찾을 수 없습니다. Helvetica 폰트를 사용합니다.")
+                return 'Helvetica'
+            
+    except Exception as e:
+        print(f"폰트 등록 중 오류: {e}")
+        return 'Helvetica'
+
+# 한글 폰트 등록 실행
+KOREAN_FONT = register_korean_fonts()
 
 # 데이터베이스 초기화
 def init_db():
@@ -821,6 +888,279 @@ def import_questions():
         flash(f'파일 처리 중 오류가 발생했습니다: {str(e)}')
     
     return redirect(url_for('questions'))
+
+@app.route('/assessment/<int:assessment_id>/report')
+def generate_pdf_report(assessment_id):
+    """평가 결과를 PDF 보고서로 생성"""
+    try:
+        # 평가 데이터 조회
+        conn = sqlite3.connect('aps_assessment.db')
+        c = conn.cursor()
+        
+        # 기본 평가 정보
+        c.execute('''SELECT a.*, co.name as company_name, co.industry, co.size
+                     FROM assessments a
+                     JOIN companies co ON a.company_id = co.id
+                     WHERE a.id = ?''', (assessment_id,))
+        assessment_data = c.fetchone()
+        
+        if not assessment_data:
+            flash('평가 데이터를 찾을 수 없습니다.')
+            return redirect(url_for('assessments'))
+        
+        # 카테고리별 점수
+        c.execute('''SELECT cat.id, cat.name, cat.weight, SUM(ar.score) as category_score,
+                            COUNT(ar.score) * 5 as max_category_score
+                     FROM categories cat
+                     JOIN questions q ON cat.id = q.category_id
+                     JOIN assessment_results ar ON q.id = ar.question_id
+                     WHERE ar.assessment_id = ?
+                     GROUP BY cat.id, cat.name, cat.weight
+                     ORDER BY cat.order_num''', (assessment_id,))
+        category_scores = c.fetchall()
+        
+        # 상세 결과
+        c.execute('''SELECT q.code, q.title, ar.score, qo.description, cat.name as category_name
+                     FROM assessment_results ar
+                     JOIN questions q ON ar.question_id = q.id
+                     JOIN question_options qo ON q.id = qo.question_id AND ar.score = qo.score
+                     JOIN categories cat ON q.category_id = cat.id
+                     WHERE ar.assessment_id = ?
+                     ORDER BY cat.order_num, q.order_num''', (assessment_id,))
+        detailed_results = c.fetchall()
+        
+        conn.close()
+        
+        # PDF 생성
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=0.5*inch, bottomMargin=0.5*inch)
+        
+        # 스타일 설정 (한글 폰트 적용)
+        styles = getSampleStyleSheet()
+        
+        # 한글 폰트 적용한 스타일들
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontName=KOREAN_FONT,
+            fontSize=18,
+            textColor=colors.darkblue,
+            alignment=TA_CENTER,
+            spaceAfter=20
+        )
+        
+        heading_style = ParagraphStyle(
+            'CustomHeading',
+            parent=styles['Heading2'],
+            fontName=KOREAN_FONT,
+            fontSize=14,
+            textColor=colors.darkblue,
+            spaceBefore=20,
+            spaceAfter=10
+        )
+        
+        normal_style = ParagraphStyle(
+            'CustomNormal',
+            parent=styles['Normal'],
+            fontName=KOREAN_FONT,
+            fontSize=10
+        )
+        
+        # PDF 콘텐츠 구성
+        story = []
+        
+        # 제목
+        story.append(Paragraph("APS 준비도 진단 보고서", title_style))
+        story.append(Spacer(1, 20))
+        
+        # 기본 정보 표
+        basic_info = [
+            ['평가 항목', '내용'],
+            ['회사명', assessment_data[7]],
+            ['업종', assessment_data[8]],
+            ['규모', assessment_data[9]],
+            ['평가일', assessment_data[4]],
+            ['총점', f"{assessment_data[2]}/140점"],
+            ['성숙도 레벨', f"Level {assessment_data[3]}"]
+        ]
+        
+        basic_table = Table(basic_info, colWidths=[2*inch, 3*inch])
+        basic_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.lightblue),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (-1, 0), KOREAN_FONT),
+            ('FONTSIZE', (0, 0), (-1, 0), 12),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+            ('FONTNAME', (0, 1), (-1, -1), KOREAN_FONT),
+            ('FONTSIZE', (0, 1), (-1, -1), 10),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ]))
+        
+        story.append(basic_table)
+        story.append(Spacer(1, 30))
+        
+        # 성숙도 레벨 설명
+        story.append(Paragraph("성숙도 레벨 평가", heading_style))
+        
+        maturity_levels = [
+            "Level 1 (< 40%): 기초 수준 - 체계적인 계획 수립이 필요",
+            "Level 2 (40-60%): 발전 수준 - 부분적 개선이 필요",
+            "Level 3 (60-80%): 우수 수준 - 전반적으로 양호한 상태",
+            "Level 4 (80-91%): 최적 수준 - 일부 고도화 필요",
+            "Level 5 (≥ 91%): 혁신 수준 - APS 도입 최적 상태"
+        ]
+        
+        for level in maturity_levels:
+            story.append(Paragraph(f"• {level}", normal_style))
+        
+        story.append(Spacer(1, 20))
+        
+        # 카테고리별 점수 표
+        story.append(Paragraph("카테고리별 상세 점수", heading_style))
+        
+        category_data = [['카테고리', '획득점수', '만점', '달성률', '가중치']]
+        for cat in category_scores:
+            achievement_rate = (cat[3] / cat[4]) * 100
+            category_data.append([
+                cat[1], 
+                f"{cat[3]}점", 
+                f"{cat[4]}점", 
+                f"{achievement_rate:.1f}%", 
+                f"{cat[2]*100:.0f}%"
+            ])
+        
+        category_table = Table(category_data, colWidths=[2.5*inch, 1*inch, 1*inch, 1*inch, 1*inch])
+        category_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.lightblue),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), KOREAN_FONT),
+            ('FONTSIZE', (0, 0), (-1, 0), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+            ('FONTNAME', (0, 1), (-1, -1), KOREAN_FONT),
+            ('FONTSIZE', (0, 1), (-1, -1), 9),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ]))
+        
+        story.append(category_table)
+        story.append(Spacer(1, 30))
+        
+        # 상세 평가 결과 (카테고리별)
+        story.append(Paragraph("상세 평가 결과", heading_style))
+        
+        current_category = ""
+        for result in detailed_results:
+            if current_category != result[4]:  # 새로운 카테고리
+                current_category = result[4]
+                story.append(Spacer(1, 15))
+                cat_style = ParagraphStyle(
+                    'CategoryStyle',
+                    parent=styles['Heading3'],
+                    fontName=KOREAN_FONT,
+                    fontSize=12,
+                    textColor=colors.darkred,
+                    spaceBefore=10,
+                    spaceAfter=5
+                )
+                story.append(Paragraph(f"▶ {current_category}", cat_style))
+            
+            # 문항별 결과
+            question_text = f"{result[0]} {result[1]} (점수: {result[2]}/5)"
+            answer_text = f"선택: {result[3]}"
+            
+            story.append(Paragraph(question_text, normal_style))
+            answer_style = ParagraphStyle(
+                'AnswerStyle',
+                parent=normal_style,
+                fontName=KOREAN_FONT,
+                fontSize=9,
+                textColor=colors.darkgreen,
+                leftIndent=20,
+                spaceAfter=8
+            )
+            story.append(Paragraph(answer_text, answer_style))
+        
+        # 권고사항
+        story.append(Spacer(1, 30))
+        story.append(Paragraph("개선 권고사항", heading_style))
+        
+        # 성숙도 레벨에 따른 권고사항
+        level = assessment_data[3]
+        recommendations = []
+        
+        if level == 1:
+            recommendations = [
+                "기본적인 생산계획 프로세스 정립이 필요합니다.",
+                "기준정보(BOM, 라우팅) 정확도 개선이 시급합니다.",
+                "ERP 시스템 활용도를 높여야 합니다.",
+                "APS 도입을 위한 기초 역량 강화가 필요합니다."
+            ]
+        elif level == 2:
+            recommendations = [
+                "생산계획 수립 주기를 단축하여 민첩성을 높이세요.",
+                "실시간 데이터 수집 체계를 구축하세요.",
+                "시스템 간 연동을 강화하여 정보 일관성을 확보하세요.",
+                "계획 담당자의 역량 개발이 필요합니다."
+            ]
+        elif level == 3:
+            recommendations = [
+                "고급 스케줄링 기법 도입을 검토하세요.",
+                "예외상황 대응 프로세스를 체계화하세요.",
+                "성과 측정 및 분석 체계를 고도화하세요.",
+                "APS 시스템 도입을 본격 검토할 시점입니다."
+            ]
+        elif level == 4:
+            recommendations = [
+                "AI/ML 기반 수요예측 고도화를 추진하세요.",
+                "실시간 최적화 알고리즘 적용을 검토하세요.",
+                "공급망 전체 관점의 통합 계획을 수립하세요.",
+                "APS 시스템 도입에 최적한 상태입니다."
+            ]
+        else:
+            recommendations = [
+                "현재 우수한 수준을 유지하면서 지속적 개선을 추진하세요.",
+                "차세대 기술(디지털 트윈, IoT 등) 활용을 검토하세요.",
+                "벤치마킹을 통한 글로벌 수준 달성을 목표로 하세요.",
+                "APS 시스템의 고도화 및 확장을 추진하세요."
+            ]
+        
+        for rec in recommendations:
+            story.append(Paragraph(f"• {rec}", normal_style))
+        
+        # 보고서 생성 정보
+        story.append(Spacer(1, 40))
+        footer_style = ParagraphStyle(
+            'FooterStyle',
+            parent=normal_style,
+            fontName=KOREAN_FONT,
+            fontSize=8,
+            textColor=colors.grey,
+            alignment=TA_CENTER
+        )
+        story.append(Paragraph(f"본 보고서는 {datetime.now().strftime('%Y년 %m월 %d일')}에 생성되었습니다.", footer_style))
+        story.append(Paragraph("APS 준비도 진단 시스템 v1.0", footer_style))
+        
+        # PDF 생성
+        doc.build(story)
+        buffer.seek(0)
+        
+        # 파일명 생성
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"APS_진단보고서_{assessment_data[7]}_{timestamp}.pdf"
+        
+        return send_file(
+            buffer,
+            as_attachment=True,
+            download_name=filename,
+            mimetype='application/pdf'
+        )
+        
+    except Exception as e:
+        flash(f'PDF 보고서 생성 중 오류가 발생했습니다: {str(e)}')
+        return redirect(url_for('assessment_detail', assessment_id=assessment_id))
 
 if __name__ == '__main__':
     print("APS 준비도 진단 시스템을 시작합니다...")
