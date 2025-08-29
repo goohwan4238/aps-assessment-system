@@ -1,0 +1,42 @@
+# Multi-stage 빌드로 최적화된 Dockerfile
+# 빌드 스테이지
+FROM python:3.11-alpine AS builder
+
+WORKDIR /app
+
+# 빌드에 필요한 패키지 설치
+RUN apk add --no-cache gcc musl-dev
+
+# 의존성 설치
+COPY requirements.txt .
+RUN pip install --no-cache-dir --user -r requirements.txt
+
+# 실행 스테이지 (더 가벼움)
+FROM python:3.11-alpine AS runner
+
+WORKDIR /app
+
+# 빌드 스테이지에서 설치된 패키지 복사
+COPY --from=builder /root/.local /root/.local
+
+# 애플리케이션 코드 복사
+COPY . .
+
+# 데이터베이스 디렉토리 생성
+RUN mkdir -p /app/data && chmod 755 /app/data
+
+# 포트 5000 노출
+EXPOSE 5000
+
+# 환경 변수 설정
+ENV FLASK_APP=app.py
+ENV FLASK_ENV=production
+ENV PYTHONPATH=/app
+ENV PATH=/root/.local/bin:$PATH
+
+# 헬스체크 설정
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:5000')" || exit 1
+
+# 애플리케이션 실행
+CMD ["python", "app.py"]

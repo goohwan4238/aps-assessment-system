@@ -67,10 +67,22 @@
             </div>
             <div class="card-body">
                 {% for result in detailed_results %}
-                <div class="mb-2">
-                    <strong>{{ result[0] }}</strong> {{ result[1] }}: 
-                    <span class="badge bg-primary">{{ result[2] }}점</span>
-                    {{ result[3] }}
+                <div class="mb-3 p-3 border-start border-primary border-3">
+                    <div class="mb-2">
+                        <strong>{{ result[0] }}</strong> {{ result[1] }}: 
+                        <span class="badge bg-primary">{{ result[2] }}점</span>
+                    </div>
+                    <div class="mb-2 text-muted">
+                        {{ result[3] }}
+                    </div>
+                    {% if result[4] %}
+                    <div class="mt-2 p-2 bg-light rounded">
+                        <small class="text-muted">
+                            <i class="bi bi-chat-quote-fill"></i> <strong>상세 의견:</strong>
+                        </small>
+                        <p class="mb-0 mt-1">{{ result[4] }}</p>
+                    </div>
+                    {% endif %}
                 </div>
                 {% endfor %}
             </div>

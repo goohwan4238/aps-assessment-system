@@ -1,0 +1,47 @@
+# Ubuntu 베이스에 Python 설치
+FROM ubuntu:22.04
+
+# 시간대 설정 (대화형 프롬프트 방지)
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Asia/Seoul
+
+WORKDIR /app
+
+# 시스템 업데이트 및 Python 설치
+RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-pip \
+    python3-venv \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+# python 명령어를 python3로 연결
+RUN ln -s /usr/bin/python3 /usr/bin/python
+
+# pip 업그레이드
+RUN pip3 install --upgrade pip
+
+# Python 요구사항 파일 복사 및 설치
+COPY requirements.txt .
+RUN pip3 install --no-cache-dir -r requirements.txt
+
+# 애플리케이션 코드 복사
+COPY . .
+
+# 데이터베이스 디렉토리 생성 및 권한 설정
+RUN mkdir -p /app/data && chmod 755 /app/data
+
+# 포트 5000 노출
+EXPOSE 5000
+
+# 환경 변수 설정
+ENV FLASK_APP=app.py
+ENV FLASK_ENV=production
+ENV PYTHONPATH=/app
+
+# 헬스체크 설정
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:5000')" || exit 1
+
+# 애플리케이션 실행
+CMD ["python3", "app.py"]

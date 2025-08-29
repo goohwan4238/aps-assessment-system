@@ -39,6 +39,17 @@
                     </label>
                 </div>
                 {% endfor %}
+                
+                <div class="mt-3">
+                    <label for="comment_{{ question.id }}" class="form-label text-muted">
+                        <i class="bi bi-pencil-square"></i> 상세 의견 (선택사항)
+                    </label>
+                    <textarea class="form-control" 
+                              id="comment_{{ question.id }}" 
+                              name="comment_{{ question.id }}" 
+                              rows="2" 
+                              placeholder="선택한 점수에 대한 구체적인 근거나 추가 의견을 작성하세요."></textarea>
+                </div>
             </div>
             {% endfor %}
         </div>

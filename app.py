@@ -146,9 +146,17 @@ def init_db():
             assessment_id INTEGER,
             question_id INTEGER,
             score INTEGER,
+            comment TEXT,
             FOREIGN KEY (assessment_id) REFERENCES assessments (id),
             FOREIGN KEY (question_id) REFERENCES questions (id)
         )''')
+        
+        # 기존 테이블에 comment 컬럼이 없으면 추가
+        c.execute("PRAGMA table_info(assessment_results)")
+        columns = [column[1] for column in c.fetchall()]
+        if 'comment' not in columns:
+            c.execute("ALTER TABLE assessment_results ADD COLUMN comment TEXT")
+            print("assessment_results 테이블에 comment 컬럼 추가됨")
         
         conn.commit()
         print("데이터베이스 테이블 생성 완료")
@@ -165,27 +173,44 @@ def insert_initial_data():
         conn = sqlite3.connect('aps_assessment.db')
         c = conn.cursor()
         
-        # 기존 데이터 확인
+        print("초기 데이터 확인 중...")
+        
+        # 카테고리 데이터 확인 및 삽입
         c.execute("SELECT COUNT(*) FROM categories")
-        if c.fetchone()[0] > 0:
-            print("초기 데이터가 이미 존재합니다.")
-            conn.close()
-            return
+        category_count = c.fetchone()[0]
         
-        print("초기 데이터 삽입 중...")
+        if category_count == 0:
+            print("카테고리 초기 데이터 삽입 중...")
+        else:
+            print(f"카테고리 데이터 존재: {category_count}개")
         
-        # 카테고리 삽입
-        categories = [
-            (1, '현행 프로세스 평가', 0.35, '생산계획수립, 스케줄생성, 작업지시, 실행, 분석 프로세스 평가', 1),
-            (2, '데이터 준비도 평가', 0.35, '기준정보, 판매계획, 계획수립용데이터, 실행실적 데이터 평가', 2),
-            (3, '관련 시스템 평가', 0.15, 'ERP, MES, 연동 시스템 등 IT 시스템 평가', 3),
-            (4, '거버넌스 평가', 0.15, '인력, 조직, 의사결정체계, 경영진 지원 평가', 4)
-        ]
+        # 문항 데이터 확인 
+        c.execute("SELECT COUNT(*) FROM questions")
+        question_count = c.fetchone()[0]
         
-        c.executemany("INSERT INTO categories (id, name, weight, description, order_num) VALUES (?, ?, ?, ?, ?)", categories)
+        if question_count == 0:
+            print("문항 초기 데이터 삽입 중...")
+        else:
+            print(f"문항 데이터 존재: {question_count}개 (기존 문항 보존)")
+            # 기존 문항이 있으면 카테고리만 확인하고 문항은 건드리지 않음
+            if category_count > 0:
+                conn.close()
+                return
         
-        # 문항 삽입
-        questions = [
+        # 카테고리 삽입 (카테고리가 없을 경우에만)
+        if category_count == 0:
+            categories = [
+                (1, '현행 프로세스 평가', 0.35, '생산계획수립, 스케줄생성, 작업지시, 실행, 분석 프로세스 평가', 1),
+                (2, '데이터 준비도 평가', 0.35, '기준정보, 판매계획, 계획수립용데이터, 실행실적 데이터 평가', 2),
+                (3, '관련 시스템 평가', 0.15, 'ERP, MES, 연동 시스템 등 IT 시스템 평가', 3),
+                (4, '거버넌스 평가', 0.15, '인력, 조직, 의사결정체계, 경영진 지원 평가', 4)
+            ]
+            
+            c.executemany("INSERT INTO categories (id, name, weight, description, order_num) VALUES (?, ?, ?, ?, ?)", categories)
+        
+        # 문항 삽입 (문항이 없을 경우에만)
+        if question_count == 0:
+            questions = [
             # 현행 프로세스 평가
             (1, 1, '1.1.1', '생산계획 수립 주기', '생산계획을 얼마나 자주 수립하는지 평가', 5, 1),
             (2, 1, '1.1.2', '계획 수립 시 고려하는 제약조건', '계획 수립 시 고려하는 제약조건의 범위', 5, 2),
@@ -223,44 +248,44 @@ def insert_initial_data():
             (28, 4, '4.3.2', '투자 계획 및 예산 확보', '투자 계획 및 예산 확보 상태', 5, 7)
         ]
         
-        c.executemany("INSERT INTO questions (id, category_id, code, title, description, max_score, order_num) VALUES (?, ?, ?, ?, ?, ?, ?)", questions)
+            c.executemany("INSERT INTO questions (id, category_id, code, title, description, max_score, order_num) VALUES (?, ?, ?, ?, ?, ?, ?)", questions)
         
-        # 문항별 선택지 삽입
-        options_data = {
-            1: {  # 생산계획 수립 주기
-                1: "불규칙적이며 수동으로 필요 시마다 수립",
-                2: "월 단위로 정기적 수립",
-                3: "주 단위로 정기적 수립",
-                4: "일 단위로 정기적 수립",
-                5: "실시간 또는 시간 단위로 동적 수립"
-            },
-            2: {  # 계획 수립 시 고려하는 제약조건
-                1: "기본 생산 용량만 고려",
-                2: "설비 용량 제약 고려",
-                3: "설비 용량 + 인력 제약 고려",
-                4: "설비 + 인력 + 자재 제약 고려",
-                5: "모든 제약조건(설비, 인력, 자재, 품질, 납기 등) 종합 고려"
-            },
-            8: {  # BOM 정확도
-                1: "60% 미만 (부정확한 정보 다수)",
-                2: "60-70% (기본적 정보만 관리)",
-                3: "70-85% (대부분 정확하나 일부 오류)",
-                4: "85-95% (높은 정확도, 정기 검증)",
-                5: "95% 이상 (매우 높은 정확도, 실시간 업데이트)"
+            # 문항별 선택지 삽입
+            options_data = {
+                1: {  # 생산계획 수립 주기
+                    1: "불규칙적이며 수동으로 필요 시마다 수립",
+                    2: "월 단위로 정기적 수립",
+                    3: "주 단위로 정기적 수립",
+                    4: "일 단위로 정기적 수립",
+                    5: "실시간 또는 시간 단위로 동적 수립"
+                },
+                2: {  # 계획 수립 시 고려하는 제약조건
+                    1: "기본 생산 용량만 고려",
+                    2: "설비 용량 제약 고려",
+                    3: "설비 용량 + 인력 제약 고려",
+                    4: "설비 + 인력 + 자재 제약 고려",
+                    5: "모든 제약조건(설비, 인력, 자재, 품질, 납기 등) 종합 고려"
+                },
+                8: {  # BOM 정확도
+                    1: "60% 미만 (부정확한 정보 다수)",
+                    2: "60-70% (기본적 정보만 관리)",
+                    3: "70-85% (대부분 정확하나 일부 오류)",
+                    4: "85-95% (높은 정확도, 정기 검증)",
+                    5: "95% 이상 (매우 높은 정확도, 실시간 업데이트)"
+                }
             }
-        }
-        
-        options = []
-        for q_id in range(1, 29):
-            for score in range(1, 6):
-                if q_id in options_data:
-                    description = options_data[q_id][score]
-                else:
-                    description = f"Level {score} - {['기본', '관리', '정의', '최적화', '혁신'][score-1]} 수준"
-                
-                options.append((q_id, score, description))
-        
-        c.executemany("INSERT INTO question_options (question_id, score, description) VALUES (?, ?, ?)", options)
+            
+            options = []
+            for q_id in range(1, 29):
+                for score in range(1, 6):
+                    if q_id in options_data:
+                        description = options_data[q_id][score]
+                    else:
+                        description = f"Level {score} - {['기본', '관리', '정의', '최적화', '혁신'][score-1]} 수준"
+                    
+                    options.append((q_id, score, description))
+            
+            c.executemany("INSERT INTO question_options (question_id, score, description) VALUES (?, ?, ?)", options)
         
         conn.commit()
         conn.close()
@@ -374,16 +399,26 @@ def submit_assessment():
     assessor_name = request.form['assessor_name']
     notes = request.form.get('notes', '')
     
-    # 점수 계산
+    # 점수 계산 및 주관식 답변 수집
     total_score = 0
     results = []
+    comments = {}
     
+    # 주관식 답변 수집
+    for key, value in request.form.items():
+        if key.startswith('comment_'):
+            question_id = int(key.split('_')[1])
+            if value.strip():  # 빈 문자열이 아닌 경우만 저장
+                comments[question_id] = value.strip()
+    
+    # 점수 수집
     for key, value in request.form.items():
         if key.startswith('question_'):
             question_id = int(key.split('_')[1])
             score = int(value)
             total_score += score
-            results.append((question_id, score))
+            comment = comments.get(question_id, '')
+            results.append((question_id, score, comment))
     
     maturity_level = calculate_maturity_level(total_score)
     
@@ -399,9 +434,9 @@ def submit_assessment():
     assessment_id = c.lastrowid
     
     # 상세 결과 저장
-    for question_id, score in results:
-        c.execute('''INSERT INTO assessment_results (assessment_id, question_id, score)
-                     VALUES (?, ?, ?)''', (assessment_id, question_id, score))
+    for question_id, score, comment in results:
+        c.execute('''INSERT INTO assessment_results (assessment_id, question_id, score, comment)
+                     VALUES (?, ?, ?, ?)''', (assessment_id, question_id, score, comment))
     
     conn.commit()
     conn.close()
@@ -432,7 +467,7 @@ def assessment_detail(assessment_id):
     category_scores = c.fetchall()
     
     # 상세 결과
-    c.execute('''SELECT q.code, q.title, ar.score, qo.description
+    c.execute('''SELECT q.code, q.title, ar.score, qo.description, ar.comment
                  FROM assessment_results ar
                  JOIN questions q ON ar.question_id = q.id
                  JOIN question_options qo ON q.id = qo.question_id AND ar.score = qo.score
@@ -847,26 +882,66 @@ def import_questions():
                     
                     category_id = category_map[category_name]
                     
-                    # 문항 업데이트
-                    c.execute('''UPDATE questions SET category_id = ?, code = ?, title = ?, description = ?
-                                 WHERE id = ?''', (category_id, code, title, description or '', question_id))
+                    # 문항 존재 여부 확인
+                    c.execute('SELECT id FROM questions WHERE id = ?', (question_id,))
+                    existing_question = c.fetchone()
                     
-                    if c.rowcount == 0:
-                        error_rows.append(f"행 {row_num}: 문항 ID {question_id}를 찾을 수 없음")
-                        continue
+                    if existing_question:
+                        # 기존 문항 업데이트
+                        c.execute('''UPDATE questions SET category_id = ?, code = ?, title = ?, description = ?
+                                     WHERE id = ?''', (category_id, code, title, description or '', question_id))
+                        action = "업데이트"
+                    else:
+                        # 새 문항 생성
+                        # order_num은 임시로 999로 설정 (나중에 자동 정렬에서 수정됨)
+                        c.execute('''INSERT INTO questions (id, category_id, code, title, description, max_score, order_num)
+                                     VALUES (?, ?, ?, ?, ?, 5, 999)''', 
+                                  (question_id, category_id, code, title, description or ''))
+                        action = "생성"
                     
-                    # 선택지 업데이트 (점수 1-5)
+                    # 선택지 처리 (DELETE 후 INSERT 방식으로 안전하게 처리)
+                    c.execute('DELETE FROM question_options WHERE question_id = ?', (question_id,))
+                    
                     for score in range(1, 6):
                         option_desc = ws.cell(row=row_num, column=5 + score).value
-                        if option_desc:
-                            c.execute('''UPDATE question_options SET description = ?
-                                         WHERE question_id = ? AND score = ?''',
-                                      (option_desc, question_id, score))
+                        if not option_desc:
+                            option_desc = f"Level {score} - {['기본', '관리', '정의', '최적화', '혁신'][score-1]} 수준"
+                        
+                        c.execute('''INSERT INTO question_options (question_id, score, description)
+                                     VALUES (?, ?, ?)''', (question_id, score, option_desc))
                     
                     updated_count += 1
                     
                 except Exception as e:
                     error_rows.append(f"행 {row_num}: 처리 오류 - {str(e)}")
+            
+            # 문항 순서 자동 재정렬
+            if updated_count > 0:
+                try:
+                    # 카테고리별로 문항 코드 순으로 order_num 재설정
+                    c.execute('''
+                        SELECT q.id, q.code, q.category_id, c.order_num as cat_order
+                        FROM questions q
+                        JOIN categories c ON q.category_id = c.id
+                        ORDER BY c.order_num, q.code
+                    ''')
+                    
+                    questions = c.fetchall()
+                    current_category = None
+                    category_order = 0
+                    
+                    for q_id, q_code, category_id, cat_order in questions:
+                        if category_id != current_category:
+                            current_category = category_id
+                            category_order = 1
+                        
+                        c.execute('UPDATE questions SET order_num = ? WHERE id = ?', 
+                                (category_order, q_id))
+                        category_order += 1
+                    
+                    print(f"문항 순서 자동 재정렬 완료")
+                except Exception as e:
+                    print(f"문항 순서 재정렬 중 오류: {e}")
             
             conn.commit()
             conn.close()
@@ -876,7 +951,7 @@ def import_questions():
             
             # 결과 메시지
             if updated_count > 0:
-                flash(f'{updated_count}개의 문항이 성공적으로 업데이트되었습니다.')
+                flash(f'{updated_count}개의 문항이 성공적으로 업데이트되었습니다. (순서 자동 정렬 완료)')
             
             if error_rows:
                 error_msg = "다음 행에서 오류가 발생했습니다:\n" + "\n".join(error_rows[:10])
@@ -919,8 +994,8 @@ def generate_pdf_report(assessment_id):
                      ORDER BY cat.order_num''', (assessment_id,))
         category_scores = c.fetchall()
         
-        # 상세 결과
-        c.execute('''SELECT q.code, q.title, ar.score, qo.description, cat.name as category_name
+        # 상세 결과 (주관식 답변 포함)
+        c.execute('''SELECT q.code, q.title, ar.score, qo.description, cat.name as category_name, ar.comment
                      FROM assessment_results ar
                      JOIN questions q ON ar.question_id = q.id
                      JOIN question_options qo ON q.id = qo.question_id AND ar.score = qo.score
@@ -1079,9 +1154,26 @@ def generate_pdf_report(assessment_id):
                 fontSize=9,
                 textColor=colors.darkgreen,
                 leftIndent=20,
-                spaceAfter=8
+                spaceAfter=5
             )
             story.append(Paragraph(answer_text, answer_style))
+            
+            # 주관식 답변이 있는 경우 추가
+            if result[5]:  # comment 필드
+                comment_style = ParagraphStyle(
+                    'CommentStyle',
+                    parent=normal_style,
+                    fontName=KOREAN_FONT,
+                    fontSize=9,
+                    textColor=colors.darkblue,
+                    leftIndent=20,
+                    spaceAfter=8,
+                    borderColor=colors.lightgrey,
+                    borderWidth=1,
+                    borderPadding=5
+                )
+                comment_text = f"※ 상세 의견: {result[5]}"
+                story.append(Paragraph(comment_text, comment_style))
         
         # 권고사항
         story.append(Spacer(1, 30))
