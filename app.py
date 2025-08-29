@@ -313,6 +313,11 @@ def calculate_maturity_level(total_score):
         return 5
 
 # 라우트 정의
+@app.route('/health')
+def health_check():
+    """헬스체크 엔드포인트"""
+    return {'status': 'healthy', 'message': 'APS Assessment System is running'}, 200
+
 @app.route('/')
 def index():
     return render_template('index.html')
