@@ -3,7 +3,7 @@ import sqlite3
 import os
 
 def check_database():
-    db_file = 'aps_assessment.db'
+    db_file = '/app/data/aps_assessment.db'
     
     # 데이터베이스 파일 존재 확인
     if not os.path.exists(db_file):
@@ -79,7 +79,7 @@ def check_database():
 
 def reset_database():
     """데이터베이스를 완전히 재설정합니다."""
-    db_file = 'aps_assessment.db'
+    db_file = '/app/data/aps_assessment.db'
     
     if os.path.exists(db_file):
         os.remove(db_file)
