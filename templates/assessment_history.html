@@ -1,0 +1,226 @@
+{% extends "base.html" %}
+
+{% block title %}평가 이력 관리 - APS 준비도 진단{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-graph-up"></i> 평가 이력 관리</h2>
+    <a href="{{ url_for('assessments') }}" class="btn btn-outline-primary">평가 현황으로 돌아가기</a>
+</div>
+
+<!-- 전체 통계 -->
+<div class="row mb-4">
+    <div class="col-md-4">
+        <div class="card bg-primary text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="card-title">전체 평가</h6>
+                        <h3 class="mb-0">{{ stats[0] }}</h3>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="bi bi-clipboard-data" style="font-size: 2rem;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card bg-success text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="card-title">완료된 평가</h6>
+                        <h3 class="mb-0">{{ stats[2] }}</h3>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="bi bi-check-circle" style="font-size: 2rem;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card bg-warning text-dark">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="card-title">진행중인 평가</h6>
+                        <h3 class="mb-0">{{ stats[1] }}</h3>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="bi bi-clock" style="font-size: 2rem;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- 평가자별 활동 현황 -->
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-people"></i> 평가자별 활동 현황</h5>
+            </div>
+            <div class="card-body">
+                {% if assessor_stats %}
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>평가자</th>
+                                <th>총 평가</th>
+                                <th>완료</th>
+                                <th>진행중</th>
+                                <th>최근 활동</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for assessor in assessor_stats %}
+                            <tr>
+                                <td><strong>{{ assessor[0] }}</strong></td>
+                                <td>{{ assessor[1] }}</td>
+                                <td><span class="badge bg-success">{{ assessor[2] }}</span></td>
+                                <td><span class="badge bg-warning">{{ assessor[3] }}</span></td>
+                                <td><small>{{ assessor[4][:16] if assessor[4] }}</small></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center text-muted py-3">
+                    <i class="bi bi-person-x" style="font-size: 2rem;"></i>
+                    <p class="mt-2">평가자 활동 데이터가 없습니다.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- 월별 완료 통계 -->
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-bar-chart"></i> 월별 완료 통계</h5>
+            </div>
+            <div class="card-body">
+                {% if monthly_stats %}
+                <canvas id="monthlyChart" width="400" height="200"></canvas>
+                {% else %}
+                <div class="text-center text-muted py-3">
+                    <i class="bi bi-graph-down" style="font-size: 2rem;"></i>
+                    <p class="mt-2">통계 데이터가 없습니다.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 최근 활동 이력 -->
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0"><i class="bi bi-clock-history"></i> 최근 활동 이력</h5>
+    </div>
+    <div class="card-body">
+        {% if recent_activities %}
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>시간</th>
+                        <th>활동</th>
+                        <th>평가자</th>
+                        <th>회사</th>
+                        <th>진행률</th>
+                        <th>메모</th>
+                        <th>작업</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for activity in recent_activities %}
+                    <tr>
+                        <td><small>{{ activity[0][:16] }}</small></td>
+                        <td>
+                            {% if activity[1] == 'created' %}
+                                <span class="badge bg-info">평가 시작</span>
+                            {% elif activity[1] == 'saved_draft' %}
+                                <span class="badge bg-warning">임시저장</span>
+                            {% elif activity[1] == 'completed' %}
+                                <span class="badge bg-success">평가 완료</span>
+                            {% else %}
+                                <span class="badge bg-secondary">{{ activity[1] }}</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ activity[2] }}</td>
+                        <td>{{ activity[3] }}</td>
+                        <td>
+                            {% if activity[4] and activity[5] %}
+                            <div class="progress" style="height: 15px; min-width: 80px;">
+                                <div class="progress-bar bg-info" style="width: {{ (activity[4]/activity[5]*100)|round }}%">
+                                    {{ activity[4] }}/{{ activity[5] }}
+                                </div>
+                            </div>
+                            {% else %}
+                            -
+                            {% endif %}
+                        </td>
+                        <td><small>{{ activity[6] }}</small></td>
+                        <td>
+                            <a href="{{ url_for('assessment_detail', assessment_id=activity[7]) }}" 
+                               class="btn btn-sm btn-outline-primary">상세</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center text-muted py-5">
+            <i class="bi bi-hourglass" style="font-size: 3rem;"></i>
+            <h5 class="mt-3">활동 이력이 없습니다</h5>
+            <p>평가를 시작하면 이력이 기록됩니다.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+{% if monthly_stats %}
+// 월별 통계 차트
+const ctx = document.getElementById('monthlyChart').getContext('2d');
+new Chart(ctx, {
+    type: 'bar',
+    data: {
+        labels: [{% for stat in monthly_stats %}'{{ stat[0] }}'{% if not loop.last %},{% endif %}{% endfor %}],
+        datasets: [{
+            label: '완료된 평가',
+            data: [{% for stat in monthly_stats %}{{ stat[1] }}{% if not loop.last %},{% endif %}{% endfor %}],
+            backgroundColor: 'rgba(54, 162, 235, 0.8)',
+            borderColor: 'rgba(54, 162, 235, 1)',
+            borderWidth: 1
+        }]
+    },
+    options: {
+        responsive: true,
+        scales: {
+            y: {
+                beginAtZero: true,
+                ticks: {
+                    stepSize: 1
+                }
+            }
+        },
+        plugins: {
+            legend: {
+                display: false
+            }
+        }
+    }
+});
+{% endif %}
+</script>
+{% endblock %}

@@ -3,41 +3,181 @@
 {% block title %}평가 이력 - APS 준비도 진단{% endblock %}
 
 {% block content %}
-<h2>평가 이력</h2>
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>평가 현황</h2>
+    <a href="{{ url_for('companies') }}" class="btn btn-success">새 평가 시작</a>
+</div>
 
-<div class="card">
+<!-- 진행중인 평가 -->
+{% set draft_assessments = assessments|selectattr('6', 'equalto', 'draft')|list %}
+{% if draft_assessments %}
+<div class="card mb-4">
+    <div class="card-header bg-warning text-dark">
+        <h5 class="mb-0"><i class="bi bi-clock"></i> 진행중인 평가 ({{ draft_assessments|length }}건)</h5>
+    </div>
     <div class="card-body">
-        <table class="table">
-            <thead>
-                <tr>
-                    <th>회사명</th>
-                    <th>평가자</th>
-                    <th>평가일</th>
-                    <th>총점</th>
-                    <th>성숙도</th>
-                    <th>작업</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for assessment in assessments %}
-                <tr>
-                    <td>{{ assessment[1] }}</td>
-                    <td>{{ assessment[2] }}</td>
-                    <td>{{ assessment[3][:16] }}</td>
-                    <td>{{ assessment[4] }}/140</td>
-                    <td>
-                        <span class="maturity-level level-{{ assessment[5] }}">
-                            Level {{ assessment[5] }}
-                        </span>
-                    </td>
-                    <td>
-                        <a href="{{ url_for('assessment_detail', assessment_id=assessment[0]) }}" 
-                           class="btn btn-sm btn-primary">상세보기</a>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+        {% for assessment in draft_assessments %}
+        <div class="border rounded p-3 mb-3">
+            <div class="row align-items-center">
+                <div class="col-md-3">
+                    <h6 class="mb-1">{{ assessment[1] }}</h6>
+                    <small class="text-muted">평가자: {{ assessment[2] }}</small>
+                </div>
+                <div class="col-md-3">
+                    <div class="progress mb-1" style="height: 20px;">
+                        <div class="progress-bar bg-info" role="progressbar" 
+                             style="width: {{ assessment[7] or 0 }}%" 
+                             aria-valuenow="{{ assessment[7] or 0 }}" 
+                             aria-valuemin="0" aria-valuemax="100">
+                            {{ assessment[7] or 0 }}%
+                        </div>
+                    </div>
+                    <small class="text-muted">진행률</small>
+                </div>
+                <div class="col-md-3">
+                    <small class="text-muted">
+                        시작: {{ assessment[3][:16] if assessment[3] }}<br>
+                        {% if assessment[8] %}
+                        수정: {{ assessment[8][:16] }}
+                        {% endif %}
+                    </small>
+                </div>
+                <div class="col-md-3 text-end">
+                    <a href="{{ url_for('continue_assessment', assessment_id=assessment[0]) }}" 
+                       class="btn btn-primary btn-sm me-2">
+                        <i class="bi bi-arrow-right"></i> 계속하기
+                    </a>
+                    <a href="#" onclick="deleteDraft({{ assessment[0] }})" 
+                       class="btn btn-outline-danger btn-sm">
+                        <i class="bi bi-trash"></i>
+                    </a>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
     </div>
 </div>
+{% endif %}
+
+<!-- 완료된 평가 -->
+{% set completed_assessments = assessments|selectattr('6', 'equalto', 'completed')|list %}
+<div class="card">
+    <div class="card-header bg-success text-white">
+        <h5 class="mb-0"><i class="bi bi-check-circle"></i> 완료된 평가 ({{ completed_assessments|length }}건)</h5>
+    </div>
+    <div class="card-body">
+        {% if completed_assessments %}
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>회사명</th>
+                        <th>평가자</th>
+                        <th>완료일</th>
+                        <th>총점</th>
+                        <th>성숙도</th>
+                        <th>작업</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for assessment in completed_assessments %}
+                    <tr>
+                        <td>
+                            <strong>{{ assessment[1] }}</strong>
+                            <br><small class="text-success">✅ 완료</small>
+                        </td>
+                        <td>{{ assessment[2] }}</td>
+                        <td>{{ assessment[3][:16] if assessment[3] }}</td>
+                        <td>
+                            <strong>{{ assessment[4] or 0 }}/140</strong>
+                            <br><small class="text-muted">{{ "%.1f"|format((assessment[4] or 0)/1.4) }}%</small>
+                        </td>
+                        <td>
+                            {% if assessment[5] %}
+                            <span class="maturity-level level-{{ assessment[5] }}">
+                                Level {{ assessment[5] }}
+                            </span>
+                            {% else %}
+                            <span class="badge bg-secondary">미완료</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="btn-group" role="group">
+                                <a href="{{ url_for('assessment_detail', assessment_id=assessment[0]) }}" 
+                                   class="btn btn-sm btn-outline-primary">
+                                    <i class="bi bi-eye"></i> 상세보기
+                                </a>
+                                <a href="{{ url_for('generate_pdf_report', assessment_id=assessment[0]) }}" 
+                                   class="btn btn-sm btn-outline-danger">
+                                    <i class="bi bi-file-pdf"></i> PDF
+                                </a>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center text-muted py-5">
+            <i class="bi bi-inbox" style="font-size: 3rem;"></i>
+            <h5 class="mt-3">완료된 평가가 없습니다</h5>
+            <p>첫 번째 평가를 시작해보세요!</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- 임시저장 삭제 확인 모달 -->
+<div class="modal fade" id="deleteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">임시저장 삭제</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                정말로 이 임시저장된 평가를 삭제하시겠습니까?<br>
+                <strong>이 작업은 되돌릴 수 없습니다.</strong>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+                <button type="button" class="btn btn-danger" id="confirmDelete">삭제</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let assessmentToDelete = null;
+
+function deleteDraft(assessmentId) {
+    assessmentToDelete = assessmentId;
+    const modal = new bootstrap.Modal(document.getElementById('deleteModal'));
+    modal.show();
+}
+
+document.getElementById('confirmDelete').addEventListener('click', function() {
+    if (assessmentToDelete) {
+        fetch(`/assessment/delete_draft/${assessmentToDelete}`, {
+            method: 'DELETE'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                location.reload(); // 페이지 새로고침
+            } else {
+                alert('삭제 중 오류가 발생했습니다: ' + data.message);
+            }
+        })
+        .catch(error => {
+            alert('삭제 중 오류가 발생했습니다.');
+            console.error('Error:', error);
+        });
+    }
+    
+    const modal = bootstrap.Modal.getInstance(document.getElementById('deleteModal'));
+    modal.hide();
+});
+</script>
 {% endblock %}

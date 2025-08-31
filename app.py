@@ -137,6 +137,9 @@ def init_db():
             total_score REAL,
             maturity_level INTEGER,
             notes TEXT,
+            status TEXT DEFAULT 'draft',
+            last_modified TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            completion_percentage INTEGER DEFAULT 0,
             FOREIGN KEY (company_id) REFERENCES companies (id)
         )''')
         
@@ -151,12 +154,53 @@ def init_db():
             FOREIGN KEY (question_id) REFERENCES questions (id)
         )''')
         
-        # 기존 테이블에 comment 컬럼이 없으면 추가
+        # 평가 이력 추적 테이블
+        c.execute('''CREATE TABLE IF NOT EXISTS assessment_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            assessment_id INTEGER,
+            action_type TEXT,
+            action_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            user_info TEXT,
+            questions_answered INTEGER,
+            total_questions INTEGER,
+            notes TEXT,
+            FOREIGN KEY (assessment_id) REFERENCES assessments (id)
+        )''')
+        
+        # 임시 저장 데이터 테이블
+        c.execute('''CREATE TABLE IF NOT EXISTS assessment_drafts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            assessment_id INTEGER,
+            question_id INTEGER,
+            score INTEGER,
+            comment TEXT,
+            saved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (assessment_id) REFERENCES assessments (id),
+            FOREIGN KEY (question_id) REFERENCES questions (id)
+        )''')
+        
+        # 기존 테이블에 새 컬럼 추가
         c.execute("PRAGMA table_info(assessment_results)")
         columns = [column[1] for column in c.fetchall()]
         if 'comment' not in columns:
             c.execute("ALTER TABLE assessment_results ADD COLUMN comment TEXT")
             print("assessment_results 테이블에 comment 컬럼 추가됨")
+            
+        # assessments 테이블에 새 컬럼 추가
+        c.execute("PRAGMA table_info(assessments)")
+        existing_columns = [column[1] for column in c.fetchall()]
+        
+        if 'status' not in existing_columns:
+            c.execute("ALTER TABLE assessments ADD COLUMN status TEXT DEFAULT 'draft'")
+            print("assessments 테이블에 status 컬럼 추가됨")
+            
+        if 'last_modified' not in existing_columns:
+            c.execute("ALTER TABLE assessments ADD COLUMN last_modified TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+            print("assessments 테이블에 last_modified 컬럼 추가됨")
+            
+        if 'completion_percentage' not in existing_columns:
+            c.execute("ALTER TABLE assessments ADD COLUMN completion_percentage INTEGER DEFAULT 0")
+            print("assessments 테이블에 completion_percentage 컬럼 추가됨")
         
         conn.commit()
         print("데이터베이스 테이블 생성 완료")
@@ -398,11 +442,176 @@ def new_assessment(company_id):
     return render_template('assessment_form.html', company=company, 
                          categories=categories, options=options)
 
+# 임시저장 관련 라우트들
+@app.route('/assessment/save_draft', methods=['POST'])
+def save_draft():
+    """평가 임시저장"""
+    try:
+        data = request.get_json()
+        company_id = data.get('company_id')
+        assessor_name = data.get('assessor_name')
+        assessment_id = data.get('assessment_id')  # 기존 평가 ID (있는 경우)
+        answers = data.get('answers', {})
+        notes = data.get('notes', '')
+        
+        conn = sqlite3.connect('/app/data/aps_assessment.db')
+        c = conn.cursor()
+        
+        # 새 평가인지 기존 평가 수정인지 확인
+        if assessment_id:
+            # 기존 평가 업데이트
+            c.execute("SELECT id FROM assessments WHERE id = ? AND status = 'draft'", (assessment_id,))
+            if not c.fetchone():
+                return {'status': 'error', 'message': '수정할 수 없는 평가입니다.'}, 400
+        else:
+            # 새 평가 생성
+            c.execute('''INSERT INTO assessments (company_id, assessor_name, notes, status, 
+                         last_modified, completion_percentage)
+                         VALUES (?, ?, ?, 'draft', CURRENT_TIMESTAMP, ?)''',
+                      (company_id, assessor_name, notes, 0))
+            assessment_id = c.lastrowid
+            
+            # 평가 이력 추가
+            c.execute('''INSERT INTO assessment_history (assessment_id, action_type, user_info,
+                         questions_answered, total_questions, notes)
+                         VALUES (?, 'created', ?, 0, 28, '평가 시작')''',
+                      (assessment_id, assessor_name))
+        
+        # 기존 임시저장 데이터 삭제
+        c.execute("DELETE FROM assessment_drafts WHERE assessment_id = ?", (assessment_id,))
+        
+        # 새 임시저장 데이터 삽입
+        questions_answered = 0
+        for question_id, answer_data in answers.items():
+            if answer_data.get('score'):
+                score = answer_data.get('score')
+                comment = answer_data.get('comment', '')
+                c.execute('''INSERT INTO assessment_drafts (assessment_id, question_id, score, comment)
+                             VALUES (?, ?, ?, ?)''', (assessment_id, question_id, score, comment))
+                questions_answered += 1
+        
+        # 진행률 계산 및 업데이트
+        completion_percentage = int((questions_answered / 28) * 100)
+        c.execute('''UPDATE assessments SET completion_percentage = ?, last_modified = CURRENT_TIMESTAMP,
+                     notes = ? WHERE id = ?''', (completion_percentage, notes, assessment_id))
+        
+        # 이력 추가
+        c.execute('''INSERT INTO assessment_history (assessment_id, action_type, user_info,
+                     questions_answered, total_questions, notes)
+                     VALUES (?, 'saved_draft', ?, ?, 28, '임시저장')''',
+                  (assessment_id, assessor_name, questions_answered))
+        
+        conn.commit()
+        conn.close()
+        
+        return {
+            'status': 'success', 
+            'assessment_id': assessment_id,
+            'completion_percentage': completion_percentage,
+            'message': f'임시저장 완료 ({questions_answered}/28 문항)'
+        }
+        
+    except Exception as e:
+        return {'status': 'error', 'message': str(e)}, 500
+
+@app.route('/assessment/load_draft/<int:assessment_id>')
+def load_draft(assessment_id):
+    """임시저장된 평가 불러오기"""
+    try:
+        conn = sqlite3.connect('/app/data/aps_assessment.db')
+        c = conn.cursor()
+        
+        # 평가 정보 확인
+        c.execute('''SELECT * FROM assessments WHERE id = ? AND status = 'draft' ''', (assessment_id,))
+        assessment = c.fetchone()
+        
+        if not assessment:
+            return {'status': 'error', 'message': '임시저장된 평가를 찾을 수 없습니다.'}, 404
+        
+        # 임시저장 데이터 불러오기
+        c.execute('''SELECT question_id, score, comment FROM assessment_drafts 
+                     WHERE assessment_id = ?''', (assessment_id,))
+        draft_data = c.fetchall()
+        
+        conn.close()
+        
+        # 데이터 형식 변환
+        answers = {}
+        for question_id, score, comment in draft_data:
+            answers[str(question_id)] = {
+                'score': score,
+                'comment': comment or ''
+            }
+        
+        return {
+            'status': 'success',
+            'assessment_id': assessment_id,
+            'answers': answers,
+            'notes': assessment[6] or '',
+            'completion_percentage': assessment[9] or 0
+        }
+        
+    except Exception as e:
+        return {'status': 'error', 'message': str(e)}, 500
+
+@app.route('/assessment/delete_draft/<int:assessment_id>', methods=['DELETE'])
+def delete_draft(assessment_id):
+    """임시저장된 평가 삭제"""
+    try:
+        conn = sqlite3.connect('/app/data/aps_assessment.db')
+        c = conn.cursor()
+        
+        # draft 상태인지 확인
+        c.execute("SELECT status FROM assessments WHERE id = ?", (assessment_id,))
+        result = c.fetchone()
+        
+        if not result:
+            return {'status': 'error', 'message': '평가를 찾을 수 없습니다.'}, 404
+            
+        if result[0] != 'draft':
+            return {'status': 'error', 'message': '완료된 평가는 삭제할 수 없습니다.'}, 400
+        
+        # 관련 데이터 모두 삭제
+        c.execute("DELETE FROM assessment_drafts WHERE assessment_id = ?", (assessment_id,))
+        c.execute("DELETE FROM assessment_history WHERE assessment_id = ?", (assessment_id,))
+        c.execute("DELETE FROM assessments WHERE id = ?", (assessment_id,))
+        
+        conn.commit()
+        conn.close()
+        
+        return {'status': 'success', 'message': '임시저장된 평가가 삭제되었습니다.'}
+        
+    except Exception as e:
+        return {'status': 'error', 'message': str(e)}, 500
+
+@app.route('/assessment/continue/<int:assessment_id>')
+def continue_assessment(assessment_id):
+    """임시저장된 평가 계속하기"""
+    conn = sqlite3.connect('/app/data/aps_assessment.db')
+    c = conn.cursor()
+    
+    # 평가 정보와 회사 정보 조회
+    c.execute('''SELECT a.company_id, c.name, c.industry 
+                 FROM assessments a
+                 JOIN companies c ON a.company_id = c.id
+                 WHERE a.id = ? AND a.status = 'draft' ''', (assessment_id,))
+    
+    result = c.fetchone()
+    conn.close()
+    
+    if not result:
+        flash('임시저장된 평가를 찾을 수 없습니다.')
+        return redirect(url_for('assessments'))
+    
+    # assessment_form으로 리다이렉트하면서 assessment_id 전달
+    return redirect(url_for('assessment_form', company_id=result[0]) + f'?assessment_id={assessment_id}')
+
 @app.route('/assessment/submit', methods=['POST'])
 def submit_assessment():
     company_id = request.form['company_id']
     assessor_name = request.form['assessor_name']
     notes = request.form.get('notes', '')
+    assessment_id = request.form.get('assessment_id')  # 기존 임시저장 ID가 있을 경우
     
     # 점수 계산 및 주관식 답변 수집
     total_score = 0
@@ -431,14 +640,38 @@ def submit_assessment():
     conn = sqlite3.connect('/app/data/aps_assessment.db')
     c = conn.cursor()
     
-    # 평가 기본 정보 저장
-    c.execute('''INSERT INTO assessments (company_id, assessor_name, total_score, maturity_level, notes)
-                 VALUES (?, ?, ?, ?, ?)''',
-              (company_id, assessor_name, total_score, maturity_level, notes))
+    if assessment_id and assessment_id.isdigit():
+        # 기존 임시저장을 완료로 업데이트
+        assessment_id = int(assessment_id)
+        c.execute('''UPDATE assessments SET total_score = ?, maturity_level = ?, notes = ?,
+                     status = 'completed', last_modified = CURRENT_TIMESTAMP, completion_percentage = 100
+                     WHERE id = ?''',
+                  (total_score, maturity_level, notes, assessment_id))
+        
+        # 기존 임시저장 데이터 삭제
+        c.execute("DELETE FROM assessment_drafts WHERE assessment_id = ?", (assessment_id,))
+        
+        # 이력 추가
+        c.execute('''INSERT INTO assessment_history (assessment_id, action_type, user_info,
+                     questions_answered, total_questions, notes)
+                     VALUES (?, 'completed', ?, 28, 28, '평가 완료')''',
+                  (assessment_id, assessor_name))
+    else:
+        # 새 평가 생성 (완료 상태로)
+        c.execute('''INSERT INTO assessments (company_id, assessor_name, total_score, maturity_level, notes,
+                     status, completion_percentage, last_modified)
+                     VALUES (?, ?, ?, ?, ?, 'completed', 100, CURRENT_TIMESTAMP)''',
+                  (company_id, assessor_name, total_score, maturity_level, notes))
+        assessment_id = c.lastrowid
+        
+        # 이력 추가
+        c.execute('''INSERT INTO assessment_history (assessment_id, action_type, user_info,
+                     questions_answered, total_questions, notes)
+                     VALUES (?, 'completed', ?, 28, 28, '평가 완료')''',
+                  (assessment_id, assessor_name))
     
-    assessment_id = c.lastrowid
-    
-    # 상세 결과 저장
+    # 상세 결과 저장 (기존 데이터 삭제 후 재삽입)
+    c.execute("DELETE FROM assessment_results WHERE assessment_id = ?", (assessment_id,))
     for question_id, score, comment in results:
         c.execute('''INSERT INTO assessment_results (assessment_id, question_id, score, comment)
                      VALUES (?, ?, ?, ?)''', (assessment_id, question_id, score, comment))
@@ -490,13 +723,76 @@ def assessments():
     conn = sqlite3.connect('/app/data/aps_assessment.db')
     c = conn.cursor()
     c.execute('''SELECT a.id, c.name as company_name, a.assessor_name, 
-                        a.assessment_date, a.total_score, a.maturity_level
+                        a.assessment_date, a.total_score, a.maturity_level,
+                        a.status, a.completion_percentage, a.last_modified
                  FROM assessments a
                  JOIN companies c ON a.company_id = c.id
-                 ORDER BY a.assessment_date DESC''')
+                 ORDER BY a.status ASC, a.last_modified DESC''')
     assessments_data = c.fetchall()
     conn.close()
     return render_template('assessments.html', assessments=assessments_data)
+
+@app.route('/assessment_history')
+def assessment_history():
+    """평가 이력 관리 페이지"""
+    conn = sqlite3.connect('/app/data/aps_assessment.db')
+    c = conn.cursor()
+    
+    # 전체 평가 통계
+    c.execute('''SELECT 
+                   COUNT(*) as total,
+                   COUNT(CASE WHEN status = 'draft' THEN 1 END) as draft_count,
+                   COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_count
+                 FROM assessments''')
+    stats = c.fetchone()
+    
+    # 평가자별 활동 현황
+    c.execute('''SELECT 
+                   assessor_name,
+                   COUNT(*) as total_assessments,
+                   COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed,
+                   COUNT(CASE WHEN status = 'draft' THEN 1 END) as draft,
+                   MAX(last_modified) as last_activity
+                 FROM assessments 
+                 GROUP BY assessor_name
+                 ORDER BY last_activity DESC''')
+    assessor_stats = c.fetchall()
+    
+    # 최근 활동 이력
+    c.execute('''SELECT 
+                   h.action_timestamp,
+                   h.action_type,
+                   h.user_info,
+                   c.name as company_name,
+                   h.questions_answered,
+                   h.total_questions,
+                   h.notes,
+                   a.id as assessment_id
+                 FROM assessment_history h
+                 JOIN assessments a ON h.assessment_id = a.id
+                 JOIN companies c ON a.company_id = c.id
+                 ORDER BY h.action_timestamp DESC
+                 LIMIT 50''')
+    recent_activities = c.fetchall()
+    
+    # 월별 완료 통계 (최근 6개월)
+    c.execute('''SELECT 
+                   strftime('%Y-%m', assessment_date) as month,
+                   COUNT(*) as completed_count
+                 FROM assessments 
+                 WHERE status = 'completed' 
+                   AND assessment_date >= date('now', '-6 months')
+                 GROUP BY strftime('%Y-%m', assessment_date)
+                 ORDER BY month DESC''')
+    monthly_stats = c.fetchall()
+    
+    conn.close()
+    
+    return render_template('assessment_history.html', 
+                         stats=stats,
+                         assessor_stats=assessor_stats,
+                         recent_activities=recent_activities,
+                         monthly_stats=monthly_stats)
 
 @app.route('/api/assessment/<int:assessment_id>/chart')
 def assessment_chart_data(assessment_id):

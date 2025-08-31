@@ -8,8 +8,26 @@
     <strong>평가 대상:</strong> {{ company[1] }} ({{ company[2] }})
 </div>
 
-<form method="POST" action="{{ url_for('submit_assessment') }}">
+<!-- 진행률 표시 -->
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <h6 class="mb-0">평가 진행률</h6>
+            <span id="progress-text">0/28 문항 완료 (0%)</span>
+        </div>
+        <div class="progress">
+            <div id="progress-bar" class="progress-bar" role="progressbar" style="width: 0%" 
+                 aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+        </div>
+        <div class="mt-2">
+            <small id="last-saved" class="text-muted"></small>
+        </div>
+    </div>
+</div>
+
+<form id="assessment-form" method="POST" action="{{ url_for('submit_assessment') }}">
     <input type="hidden" name="company_id" value="{{ company[0] }}">
+    <input type="hidden" id="assessment_id" name="assessment_id" value="">
     
     <div class="mb-3">
         <label for="assessor_name" class="form-label">평가자명 *</label>
@@ -64,7 +82,220 @@
 
     <div class="d-flex gap-2">
         <button type="submit" class="btn btn-primary btn-lg">평가 완료</button>
+        <button type="button" id="save-draft-btn" class="btn btn-outline-primary btn-lg">임시저장</button>
         <a href="{{ url_for('companies') }}" class="btn btn-secondary">취소</a>
     </div>
 </form>
+
+<!-- 자동저장 및 진행률 관리 스크립트 -->
+<script>
+let currentAssessmentId = null;
+let autoSaveInterval = null;
+let totalQuestions = 28;
+
+// 페이지 로드 시 실행
+document.addEventListener('DOMContentLoaded', function() {
+    // URL 파라미터에서 assessment_id 확인 (기존 임시저장 복원 시)
+    const urlParams = new URLSearchParams(window.location.search);
+    const assessmentId = urlParams.get('assessment_id');
+    
+    if (assessmentId) {
+        loadDraftData(assessmentId);
+    }
+    
+    // 진행률 업데이트
+    updateProgress();
+    
+    // 답변 변경 시 진행률 업데이트
+    document.addEventListener('change', function(e) {
+        if (e.target.name && e.target.name.startsWith('question_')) {
+            updateProgress();
+        }
+    });
+    
+    // 임시저장 버튼 이벤트
+    document.getElementById('save-draft-btn').addEventListener('click', saveDraft);
+    
+    // 5분마다 자동저장
+    startAutoSave();
+});
+
+// 진행률 업데이트
+function updateProgress() {
+    let answeredQuestions = 0;
+    
+    // 각 문항의 답변 확인
+    for (let i = 1; i <= totalQuestions; i++) {
+        const radioButtons = document.querySelectorAll(`input[name="question_${i}"]:checked`);
+        if (radioButtons.length > 0) {
+            answeredQuestions++;
+        }
+    }
+    
+    const percentage = Math.round((answeredQuestions / totalQuestions) * 100);
+    
+    // UI 업데이트
+    document.getElementById('progress-text').textContent = 
+        `${answeredQuestions}/${totalQuestions} 문항 완료 (${percentage}%)`;
+    document.getElementById('progress-bar').style.width = `${percentage}%`;
+    document.getElementById('progress-bar').setAttribute('aria-valuenow', percentage);
+    
+    // 진행률에 따른 색상 변경
+    const progressBar = document.getElementById('progress-bar');
+    progressBar.className = 'progress-bar';
+    if (percentage >= 100) {
+        progressBar.classList.add('bg-success');
+    } else if (percentage >= 50) {
+        progressBar.classList.add('bg-info');
+    } else {
+        progressBar.classList.add('bg-warning');
+    }
+}
+
+// 임시저장 함수
+function saveDraft() {
+    const formData = collectFormData();
+    
+    fetch('/assessment/save_draft', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(formData)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            currentAssessmentId = data.assessment_id;
+            document.getElementById('assessment_id').value = currentAssessmentId;
+            document.getElementById('last-saved').textContent = 
+                `${data.message} - ${new Date().toLocaleTimeString()}`;
+            
+            // 성공 알림
+            showAlert('success', data.message);
+        } else {
+            showAlert('error', '임시저장 중 오류가 발생했습니다: ' + data.message);
+        }
+    })
+    .catch(error => {
+        showAlert('error', '임시저장 중 오류가 발생했습니다.');
+        console.error('Error:', error);
+    });
+}
+
+// 폼 데이터 수집
+function collectFormData() {
+    const answers = {};
+    
+    // 각 문항의 답변 수집
+    for (let i = 1; i <= totalQuestions; i++) {
+        const scoreRadio = document.querySelector(`input[name="question_${i}"]:checked`);
+        const commentTextarea = document.querySelector(`textarea[name="comment_${i}"]`);
+        
+        if (scoreRadio) {
+            answers[i] = {
+                score: parseInt(scoreRadio.value),
+                comment: commentTextarea ? commentTextarea.value : ''
+            };
+        }
+    }
+    
+    return {
+        company_id: document.querySelector('input[name="company_id"]').value,
+        assessor_name: document.getElementById('assessor_name').value,
+        assessment_id: currentAssessmentId,
+        answers: answers,
+        notes: document.getElementById('notes').value
+    };
+}
+
+// 임시저장 데이터 불러오기
+function loadDraftData(assessmentId) {
+    fetch(`/assessment/load_draft/${assessmentId}`)
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            currentAssessmentId = assessmentId;
+            document.getElementById('assessment_id').value = assessmentId;
+            
+            // 답변 복원
+            Object.keys(data.answers).forEach(questionId => {
+                const answer = data.answers[questionId];
+                
+                // 점수 복원
+                const scoreRadio = document.querySelector(
+                    `input[name="question_${questionId}"][value="${answer.score}"]`
+                );
+                if (scoreRadio) {
+                    scoreRadio.checked = true;
+                }
+                
+                // 주관식 답변 복원
+                const commentTextarea = document.querySelector(`textarea[name="comment_${questionId}"]`);
+                if (commentTextarea && answer.comment) {
+                    commentTextarea.value = answer.comment;
+                }
+            });
+            
+            // 메모 복원
+            if (data.notes) {
+                document.getElementById('notes').value = data.notes;
+            }
+            
+            // 진행률 업데이트
+            updateProgress();
+            
+            document.getElementById('last-saved').textContent = 
+                `이전 임시저장 데이터를 불러왔습니다 (${data.completion_percentage}% 완료)`;
+            
+            showAlert('info', '이전에 저장된 평가 데이터를 불러왔습니다.');
+        }
+    })
+    .catch(error => {
+        console.error('Error loading draft:', error);
+    });
+}
+
+// 자동저장 시작
+function startAutoSave() {
+    autoSaveInterval = setInterval(() => {
+        const assessorName = document.getElementById('assessor_name').value;
+        if (assessorName.trim()) {  // 평가자명이 입력된 경우에만 자동저장
+            saveDraft();
+        }
+    }, 5 * 60 * 1000); // 5분마다
+}
+
+// 알림 표시
+function showAlert(type, message) {
+    const alertDiv = document.createElement('div');
+    alertDiv.className = `alert alert-${type === 'error' ? 'danger' : type} alert-dismissible fade show`;
+    alertDiv.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    
+    // 페이지 상단에 알림 삽입
+    const content = document.querySelector('.container, .container-fluid, main');
+    if (content) {
+        content.insertBefore(alertDiv, content.firstChild);
+    }
+    
+    // 3초 후 자동 제거
+    setTimeout(() => {
+        if (alertDiv.parentNode) {
+            alertDiv.remove();
+        }
+    }, 3000);
+}
+
+// 페이지 벗어날 때 경고
+window.addEventListener('beforeunload', function(e) {
+    const answeredQuestions = document.querySelectorAll('input[type="radio"]:checked').length;
+    if (answeredQuestions > 0 && !currentAssessmentId) {
+        e.preventDefault();
+        e.returnValue = '작성 중인 평가가 있습니다. 페이지를 벗어나시겠습니까?';
+    }
+});
+</script>
 {% endblock %}
