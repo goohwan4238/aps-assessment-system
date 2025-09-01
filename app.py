@@ -370,9 +370,17 @@ def index():
 def companies():
     conn = sqlite3.connect('/app/data/aps_assessment.db')
     c = conn.cursor()
-    c.execute('''SELECT c.*, COUNT(a.id) as assessment_count 
+    c.execute('''SELECT c.*, 
+                        COUNT(a.id) as assessment_count,
+                        draft_assessments.draft_id,
+                        draft_assessments.completion_percentage
                  FROM companies c 
                  LEFT JOIN assessments a ON c.id = a.company_id 
+                 LEFT JOIN (
+                     SELECT company_id, id as draft_id, completion_percentage 
+                     FROM assessments 
+                     WHERE status = 'draft'
+                 ) draft_assessments ON c.id = draft_assessments.company_id
                  GROUP BY c.id
                  ORDER BY c.created_date DESC''')
     companies_data = c.fetchall()
@@ -398,6 +406,15 @@ def new_company():
 def new_assessment(company_id):
     conn = sqlite3.connect('/app/data/aps_assessment.db')
     c = conn.cursor()
+    
+    # 해당 회사의 기존 임시저장 평가 확인
+    c.execute("SELECT id FROM assessments WHERE company_id = ? AND status = 'draft'", (company_id,))
+    existing_draft = c.fetchone()
+    
+    if existing_draft:
+        # 기존 임시저장이 있으면 해당 평가로 리다이렉트
+        conn.close()
+        return redirect(url_for('continue_assessment', assessment_id=existing_draft[0]))
     
     # 회사 정보
     c.execute("SELECT * FROM companies WHERE id = ?", (company_id,))
@@ -548,6 +565,7 @@ def load_draft(assessment_id):
             'assessment_id': assessment_id,
             'answers': answers,
             'notes': assessment[6] or '',
+            'assessor_name': assessment[2] or '',
             'completion_percentage': assessment[9] or 0
         }
         

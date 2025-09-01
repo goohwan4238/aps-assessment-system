@@ -80,10 +80,10 @@
                   placeholder="평가 과정에서 특이사항이나 추가 의견을 기록하세요."></textarea>
     </div>
 
-    <div class="d-flex gap-2">
+    <div class="d-flex gap-2 mb-5">
         <button type="submit" class="btn btn-primary btn-lg">평가 완료</button>
         <button type="button" id="save-draft-btn" class="btn btn-outline-primary btn-lg">임시저장</button>
-        <a href="{{ url_for('companies') }}" class="btn btn-secondary">취소</a>
+        <a href="{{ url_for('companies') }}" class="btn btn-secondary btn-lg">취소</a>
     </div>
 </form>
 
@@ -240,6 +240,11 @@ function loadDraftData(assessmentId) {
             // 메모 복원
             if (data.notes) {
                 document.getElementById('notes').value = data.notes;
+            }
+            
+            // 평가자명 복원
+            if (data.assessor_name) {
+                document.getElementById('assessor_name').value = data.assessor_name;
             }
             
             // 진행률 업데이트

@@ -19,6 +19,7 @@
                     <th>담당자</th>
                     <th>평가횟수</th>
                     <th>등록일</th>
+                    <th>상태</th>
                     <th>작업</th>
                 </tr>
             </thead>
@@ -32,7 +33,31 @@
                     <td>{{ company[7] }}회</td>
                     <td>{{ company[6][:10] }}</td>
                     <td>
-                        <a href="{{ url_for('new_assessment', company_id=company[0]) }}" class="btn btn-sm btn-success">평가하기</a>
+                        {% if company[8] %}
+                        <div class="d-flex align-items-center">
+                            <div class="progress me-2" style="height: 15px; min-width: 60px;">
+                                <div class="progress-bar bg-warning" style="width: {{ company[9] or 0 }}%">
+                                    {{ company[9] or 0 }}%
+                                </div>
+                            </div>
+                            <small class="text-muted">진행중</small>
+                        </div>
+                        {% else %}
+                        <span class="text-muted">-</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if company[8] %}
+                        <a href="{{ url_for('continue_assessment', assessment_id=company[8]) }}" 
+                           class="btn btn-sm btn-warning">
+                            <i class="bi bi-arrow-right"></i> 계속하기
+                        </a>
+                        {% else %}
+                        <a href="{{ url_for('new_assessment', company_id=company[0]) }}" 
+                           class="btn btn-sm btn-success">
+                            <i class="bi bi-plus"></i> 평가하기
+                        </a>
+                        {% endif %}
                     </td>
                 </tr>
                 {% endfor %}
