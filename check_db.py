@@ -100,7 +100,7 @@ def reset_database():
 def show_sample_data():
     """샘플 데이터를 표시합니다."""
     try:
-        conn = sqlite3.connect('aps_assessment.db')
+        conn = sqlite3.connect('/app/data/aps_assessment.db')
         c = conn.cursor()
         
         print("\n=== 샘플 문항 확인 ===")

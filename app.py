@@ -18,8 +18,10 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from pathlib import Path
 
+from config import Config
+
 app = Flask(__name__)
-app.secret_key = 'your-secret-key-here'
+app.config.from_object(Config)
 
 # 한글 폰트 등록
 def register_korean_fonts():
@@ -82,7 +84,7 @@ KOREAN_FONT = register_korean_fonts()
 # 데이터베이스 초기화
 def init_db():
     try:
-        conn = sqlite3.connect('/app/data/aps_assessment.db')
+        conn = sqlite3.connect(app.config['DATABASE_PATH'])
         c = conn.cursor()
         
         print("데이터베이스 테이블 생성 중...")
@@ -214,7 +216,7 @@ def init_db():
 # 초기 데이터 삽입
 def insert_initial_data():
     try:
-        conn = sqlite3.connect('/app/data/aps_assessment.db')
+        conn = sqlite3.connect(app.config['DATABASE_PATH'])
         c = conn.cursor()
         
         print("초기 데이터 확인 중...")
@@ -368,7 +370,7 @@ def index():
 
 @app.route('/companies')
 def companies():
-    conn = sqlite3.connect('/app/data/aps_assessment.db')
+    conn = sqlite3.connect(app.config['DATABASE_PATH'])
     c = conn.cursor()
     c.execute('''SELECT c.*, 
                         COUNT(a.id) as assessment_count,
@@ -390,7 +392,7 @@ def companies():
 @app.route('/company/new', methods=['GET', 'POST'])
 def new_company():
     if request.method == 'POST':
-        conn = sqlite3.connect('/app/data/aps_assessment.db')
+        conn = sqlite3.connect(app.config['DATABASE_PATH'])
         c = conn.cursor()
         c.execute('''INSERT INTO companies (name, industry, size, contact_person, contact_email)
                      VALUES (?, ?, ?, ?, ?)''',
@@ -404,17 +406,21 @@ def new_company():
 
 @app.route('/assessment/new/<int:company_id>')
 def new_assessment(company_id):
-    conn = sqlite3.connect('/app/data/aps_assessment.db')
+    conn = sqlite3.connect(app.config['DATABASE_PATH'])
     c = conn.cursor()
     
-    # 해당 회사의 기존 임시저장 평가 확인
-    c.execute("SELECT id FROM assessments WHERE company_id = ? AND status = 'draft'", (company_id,))
-    existing_draft = c.fetchone()
+    # URL에서 assessment_id 파라미터 확인 (계속하기용)
+    assessment_id = request.args.get('assessment_id')
     
-    if existing_draft:
-        # 기존 임시저장이 있으면 해당 평가로 리다이렉트
-        conn.close()
-        return redirect(url_for('continue_assessment', assessment_id=existing_draft[0]))
+    if not assessment_id:
+        # 해당 회사의 기존 임시저장 평가 확인
+        c.execute("SELECT id FROM assessments WHERE company_id = ? AND status = 'draft'", (company_id,))
+        existing_draft = c.fetchone()
+        
+        if existing_draft:
+            # 기존 임시저장이 있으면 해당 평가로 리다이렉트
+            conn.close()
+            return redirect(url_for('continue_assessment', assessment_id=existing_draft[0]))
     
     # 회사 정보
     c.execute("SELECT * FROM companies WHERE id = ?", (company_id,))
@@ -431,6 +437,23 @@ def new_assessment(company_id):
                  FROM question_options qo
                  ORDER BY qo.question_id, qo.score''')
     options_data = c.fetchall()
+    
+    # 기존 임시저장 데이터 로드 (assessment_id가 있는 경우)
+    existing_answers = {}
+    existing_assessment = None
+    if assessment_id:
+        c.execute("SELECT * FROM assessments WHERE id = ? AND status = 'draft'", (assessment_id,))
+        existing_assessment = c.fetchone()
+        
+        if existing_assessment:
+            # 기존 답변 로드
+            c.execute("SELECT question_id, score, comment FROM assessment_results WHERE assessment_id = ?", (assessment_id,))
+            results = c.fetchall()
+            for result in results:
+                existing_answers[result[0]] = {
+                    'score': result[1],
+                    'opinion': result[2] or ''
+                }
     
     conn.close()
     
@@ -457,7 +480,9 @@ def new_assessment(company_id):
         options[q_id].append({'score': option[1], 'description': option[2]})
     
     return render_template('assessment_form.html', company=company, 
-                         categories=categories, options=options)
+                         categories=categories, options=options,
+                         existing_answers=existing_answers, 
+                         existing_assessment=existing_assessment)
 
 # 임시저장 관련 라우트들
 @app.route('/assessment/save_draft', methods=['POST'])
@@ -471,7 +496,7 @@ def save_draft():
         answers = data.get('answers', {})
         notes = data.get('notes', '')
         
-        conn = sqlite3.connect('/app/data/aps_assessment.db')
+        conn = sqlite3.connect(app.config['DATABASE_PATH'])
         c = conn.cursor()
         
         # 새 평가인지 기존 평가 수정인지 확인
@@ -535,7 +560,7 @@ def save_draft():
 def load_draft(assessment_id):
     """임시저장된 평가 불러오기"""
     try:
-        conn = sqlite3.connect('/app/data/aps_assessment.db')
+        conn = sqlite3.connect(app.config['DATABASE_PATH'])
         c = conn.cursor()
         
         # 평가 정보 확인
@@ -576,7 +601,7 @@ def load_draft(assessment_id):
 def delete_draft(assessment_id):
     """임시저장된 평가 삭제"""
     try:
-        conn = sqlite3.connect('/app/data/aps_assessment.db')
+        conn = sqlite3.connect(app.config['DATABASE_PATH'])
         c = conn.cursor()
         
         # draft 상태인지 확인
@@ -605,7 +630,7 @@ def delete_draft(assessment_id):
 @app.route('/assessment/continue/<int:assessment_id>')
 def continue_assessment(assessment_id):
     """임시저장된 평가 계속하기"""
-    conn = sqlite3.connect('/app/data/aps_assessment.db')
+    conn = sqlite3.connect(app.config['DATABASE_PATH'])
     c = conn.cursor()
     
     # 평가 정보와 회사 정보 조회
@@ -621,8 +646,8 @@ def continue_assessment(assessment_id):
         flash('임시저장된 평가를 찾을 수 없습니다.')
         return redirect(url_for('assessments'))
     
-    # assessment_form으로 리다이렉트하면서 assessment_id 전달
-    return redirect(url_for('assessment_form', company_id=result[0]) + f'?assessment_id={assessment_id}')
+    # new_assessment로 리다이렉트하면서 assessment_id 전달
+    return redirect(url_for('new_assessment', company_id=result[0]) + f'?assessment_id={assessment_id}')
 
 @app.route('/assessment/submit', methods=['POST'])
 def submit_assessment():
@@ -655,7 +680,7 @@ def submit_assessment():
     maturity_level = calculate_maturity_level(total_score)
     
     # 데이터베이스 저장
-    conn = sqlite3.connect('/app/data/aps_assessment.db')
+    conn = sqlite3.connect(app.config['DATABASE_PATH'])
     c = conn.cursor()
     
     if assessment_id and assessment_id.isdigit():
@@ -702,7 +727,7 @@ def submit_assessment():
 
 @app.route('/assessment/<int:assessment_id>')
 def assessment_detail(assessment_id):
-    conn = sqlite3.connect('/app/data/aps_assessment.db')
+    conn = sqlite3.connect(app.config['DATABASE_PATH'])
     c = conn.cursor()
     
     # 평가 기본 정보
@@ -738,7 +763,7 @@ def assessment_detail(assessment_id):
 
 @app.route('/assessments')
 def assessments():
-    conn = sqlite3.connect('/app/data/aps_assessment.db')
+    conn = sqlite3.connect(app.config['DATABASE_PATH'])
     c = conn.cursor()
     c.execute('''SELECT a.id, c.name as company_name, a.assessor_name, 
                         a.assessment_date, a.total_score, a.maturity_level,
@@ -753,7 +778,7 @@ def assessments():
 @app.route('/assessment_history')
 def assessment_history():
     """평가 이력 관리 페이지"""
-    conn = sqlite3.connect('/app/data/aps_assessment.db')
+    conn = sqlite3.connect(app.config['DATABASE_PATH'])
     c = conn.cursor()
     
     # 전체 평가 통계
@@ -814,7 +839,7 @@ def assessment_history():
 
 @app.route('/api/assessment/<int:assessment_id>/chart')
 def assessment_chart_data(assessment_id):
-    conn = sqlite3.connect('/app/data/aps_assessment.db')
+    conn = sqlite3.connect(app.config['DATABASE_PATH'])
     c = conn.cursor()
     
     c.execute('''SELECT cat.name, SUM(ar.score) as score, COUNT(ar.score) * 5 as max_score
@@ -839,7 +864,7 @@ def assessment_chart_data(assessment_id):
 
 @app.route('/api/assessment/<int:assessment_id>/category/<int:category_id>/detail')
 def assessment_category_detail(assessment_id, category_id):
-    conn = sqlite3.connect('/app/data/aps_assessment.db')
+    conn = sqlite3.connect(app.config['DATABASE_PATH'])
     c = conn.cursor()
     
     c.execute('''SELECT q.title, ar.score, cat.name as category_name
@@ -867,7 +892,7 @@ def assessment_category_detail(assessment_id, category_id):
 
 @app.route('/questions')
 def questions():
-    conn = sqlite3.connect('/app/data/aps_assessment.db')
+    conn = sqlite3.connect(app.config['DATABASE_PATH'])
     c = conn.cursor()
     c.execute('''SELECT q.id, c.name as category_name, q.code, q.title, q.description
                  FROM questions q
@@ -879,7 +904,7 @@ def questions():
 
 @app.route('/question/<int:question_id>/edit', methods=['GET', 'POST'])
 def edit_question(question_id):
-    conn = sqlite3.connect('/app/data/aps_assessment.db')
+    conn = sqlite3.connect(app.config['DATABASE_PATH'])
     c = conn.cursor()
     
     if request.method == 'POST':
@@ -925,7 +950,7 @@ def edit_question(question_id):
 
 @app.route('/question/<int:question_id>/delete', methods=['POST'])
 def delete_question(question_id):
-    conn = sqlite3.connect('/app/data/aps_assessment.db')
+    conn = sqlite3.connect(app.config['DATABASE_PATH'])
     c = conn.cursor()
     
     # 선택지 먼저 삭제
@@ -946,7 +971,7 @@ def delete_question(question_id):
 @app.route('/question/new', methods=['GET', 'POST'])
 def new_question():
     if request.method == 'POST':
-        conn = sqlite3.connect('/app/data/aps_assessment.db')
+        conn = sqlite3.connect(app.config['DATABASE_PATH'])
         c = conn.cursor()
         
         # 새 문항 추가
@@ -971,7 +996,7 @@ def new_question():
         return redirect(url_for('questions'))
     
     # GET 요청 - 새 문항 폼 표시
-    conn = sqlite3.connect('/app/data/aps_assessment.db')
+    conn = sqlite3.connect(app.config['DATABASE_PATH'])
     c = conn.cursor()
     c.execute('SELECT id, name FROM categories ORDER BY order_num')
     categories = c.fetchall()
@@ -981,7 +1006,7 @@ def new_question():
 
 @app.route('/categories')
 def categories():
-    conn = sqlite3.connect('/app/data/aps_assessment.db')
+    conn = sqlite3.connect(app.config['DATABASE_PATH'])
     c = conn.cursor()
     c.execute('''SELECT c.*, COUNT(q.id) as question_count
                  FROM categories c
@@ -994,7 +1019,7 @@ def categories():
 
 @app.route('/category/<int:category_id>/edit', methods=['GET', 'POST'])
 def edit_category(category_id):
-    conn = sqlite3.connect('/app/data/aps_assessment.db')
+    conn = sqlite3.connect(app.config['DATABASE_PATH'])
     c = conn.cursor()
     
     if request.method == 'POST':
@@ -1017,7 +1042,7 @@ def edit_category(category_id):
 @app.route('/category/new', methods=['GET', 'POST'])
 def new_category():
     if request.method == 'POST':
-        conn = sqlite3.connect('/app/data/aps_assessment.db')
+        conn = sqlite3.connect(app.config['DATABASE_PATH'])
         c = conn.cursor()
         
         # 새 카테고리의 order_num 계산 (기존 최대값 + 1)
@@ -1037,7 +1062,7 @@ def new_category():
 
 @app.route('/category/<int:category_id>/delete', methods=['POST'])
 def delete_category(category_id):
-    conn = sqlite3.connect('/app/data/aps_assessment.db')
+    conn = sqlite3.connect(app.config['DATABASE_PATH'])
     c = conn.cursor()
     
     # 카테고리에 연결된 문항이 있는지 확인
@@ -1060,7 +1085,7 @@ def delete_category(category_id):
 @app.route('/questions/export')
 def export_questions():
     """평가 문항을 Excel 파일로 내보내기"""
-    conn = sqlite3.connect('/app/data/aps_assessment.db')
+    conn = sqlite3.connect(app.config['DATABASE_PATH'])
     c = conn.cursor()
     
     # 문항과 선택지 데이터 조회
@@ -1169,7 +1194,7 @@ def import_questions():
             wb = load_workbook(tmp.name)
             ws = wb.active
             
-            conn = sqlite3.connect('/app/data/aps_assessment.db')
+            conn = sqlite3.connect(app.config['DATABASE_PATH'])
             c = conn.cursor()
             
             # 카테고리 매핑 생성 (이름 -> ID)
@@ -1288,7 +1313,7 @@ def generate_pdf_report(assessment_id):
     """평가 결과를 PDF 보고서로 생성"""
     try:
         # 평가 데이터 조회
-        conn = sqlite3.connect('/app/data/aps_assessment.db')
+        conn = sqlite3.connect(app.config['DATABASE_PATH'])
         c = conn.cursor()
         
         # 기본 평가 정보
