@@ -535,7 +535,7 @@ def save_draft():
         # 진행률 계산 및 업데이트
         completion_percentage = int((questions_answered / 28) * 100)
         c.execute('''UPDATE assessments SET completion_percentage = ?, last_modified = CURRENT_TIMESTAMP,
-                     notes = ? WHERE id = ?''', (completion_percentage, notes, assessment_id))
+                     notes = ?, assessor_name = ? WHERE id = ?''', (completion_percentage, notes, assessor_name or '', assessment_id))
         
         # 이력 추가
         c.execute('''INSERT INTO assessment_history (assessment_id, action_type, user_info,
@@ -687,9 +687,9 @@ def submit_assessment():
         # 기존 임시저장을 완료로 업데이트
         assessment_id = int(assessment_id)
         c.execute('''UPDATE assessments SET total_score = ?, maturity_level = ?, notes = ?,
-                     status = 'completed', last_modified = CURRENT_TIMESTAMP, completion_percentage = 100
-                     WHERE id = ?''',
-                  (total_score, maturity_level, notes, assessment_id))
+                     status = 'completed', last_modified = CURRENT_TIMESTAMP, completion_percentage = 100,
+                     assessor_name = ? WHERE id = ?''',
+                  (total_score, maturity_level, notes, assessor_name, assessment_id))
         
         # 기존 임시저장 데이터 삭제
         c.execute("DELETE FROM assessment_drafts WHERE assessment_id = ?", (assessment_id,))

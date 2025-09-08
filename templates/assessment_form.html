@@ -80,12 +80,58 @@
                   placeholder="평가 과정에서 특이사항이나 추가 의견을 기록하세요."></textarea>
     </div>
 
-    <div class="d-flex gap-2 mb-5">
-        <button type="submit" class="btn btn-primary btn-lg">평가 완료</button>
-        <button type="button" id="save-draft-btn" class="btn btn-outline-primary btn-lg">임시저장</button>
-        <a href="{{ url_for('companies') }}" class="btn btn-secondary btn-lg">취소</a>
+    <div id="sticky-buttons" class="sticky-button-bar">
+        <div class="container">
+            <div class="d-flex gap-2 justify-content-center">
+                <button type="submit" class="btn btn-primary btn-lg">평가 완료</button>
+                <button type="button" id="save-draft-btn" class="btn btn-outline-primary btn-lg">임시저장</button>
+                <a href="{{ url_for('companies') }}" class="btn btn-secondary btn-lg">취소</a>
+            </div>
+        </div>
     </div>
 </form>
+
+<!-- Sticky 버튼 스타일 -->
+<style>
+.sticky-button-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    border-top: 1px solid #dee2e6;
+    padding: 1rem 0;
+    z-index: 1000;
+    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+}
+
+/* 기존 폼 하단에 여백 추가하여 sticky 버튼에 가려지지 않도록 */
+form {
+    padding-bottom: 100px;
+}
+
+/* 모바일에서 버튼 크기 조정 */
+@media (max-width: 768px) {
+    .sticky-button-bar .btn {
+        font-size: 0.9rem;
+        padding: 0.6rem 1.2rem;
+    }
+    
+    .sticky-button-bar .d-flex {
+        flex-wrap: wrap;
+        gap: 0.5rem !important;
+    }
+}
+
+/* 다크모드 지원 */
+@media (prefers-color-scheme: dark) {
+    .sticky-button-bar {
+        background: rgba(33, 37, 41, 0.95);
+        border-top-color: #495057;
+    }
+}
+</style>
 
 <!-- 자동저장 및 진행률 관리 스크립트 -->
 <script>
@@ -171,8 +217,9 @@ function saveDraft() {
             document.getElementById('last-saved').textContent = 
                 `${data.message} - ${new Date().toLocaleTimeString()}`;
             
-            // 성공 알림
-            showAlert('success', data.message);
+            // 임시저장 확인 모달 표시
+            const modal = new bootstrap.Modal(document.getElementById('saveConfirmModal'));
+            modal.show();
         } else {
             showAlert('error', '임시저장 중 오류가 발생했습니다: ' + data.message);
         }
@@ -301,6 +348,51 @@ window.addEventListener('beforeunload', function(e) {
         e.preventDefault();
         e.returnValue = '작성 중인 평가가 있습니다. 페이지를 벗어나시겠습니까?';
     }
+});
+</script>
+
+<!-- 임시저장 확인 모달 -->
+<div class="modal fade" id="saveConfirmModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title">
+                    <i class="bi bi-check-circle-fill me-2"></i>임시저장 완료
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="text-center mb-3">
+                    <i class="bi bi-check-circle text-success" style="font-size: 3rem;"></i>
+                    <h6 class="mt-2">평가가 성공적으로 저장되었습니다!</h6>
+                    <p class="text-muted mb-0">언제든지 평가를 계속 진행하실 수 있습니다.</p>
+                </div>
+                <hr>
+                <p class="mb-3"><strong>다음 중 어떤 작업을 하시겠습니까?</strong></p>
+                <div class="d-grid gap-2">
+                    <button type="button" class="btn btn-primary" id="continueAssessment">
+                        <i class="bi bi-arrow-right me-2"></i>평가 계속하기
+                    </button>
+                    <button type="button" class="btn btn-outline-primary" id="goToAssessments">
+                        <i class="bi bi-list-ul me-2"></i>평가 현황으로 이동
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// 임시저장 확인 모달 이벤트 처리
+document.addEventListener('DOMContentLoaded', function() {
+    document.getElementById('continueAssessment').addEventListener('click', function() {
+        const modal = bootstrap.Modal.getInstance(document.getElementById('saveConfirmModal'));
+        modal.hide();
+    });
+    
+    document.getElementById('goToAssessments').addEventListener('click', function() {
+        window.location.href = '{{ url_for("assessments") }}';
+    });
 });
 </script>
 {% endblock %}
